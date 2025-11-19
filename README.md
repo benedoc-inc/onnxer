@@ -33,6 +33,8 @@ The `examples/` directory contains complete examples:
 - **resnet**: Image classification using ResNet
 - **roberta-sentiment**: Sentiment analysis using RoBERTa
 - **yolov10**: Object detection using YOLOv10
-- **genai**: Text generation using ONNX Runtime GenAI (experimental)
+
+- **genai/phi3**: Text generation using Phi-3
+- **genai/phi3.5-vision**: Multimodal vision-language processing using Phi-3.5-Vision
 
 See each example's README for detailed instructions.
