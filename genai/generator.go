@@ -41,6 +41,15 @@ func (g *Generator) AppendTokens(tokens []int32) error {
 	return nil
 }
 
+// SetInputs sets the named tensors as inputs for the generator.
+func (g *Generator) SetInputs(inputs *NamedTensors) error {
+	result := g.runtime.funcs.GeneratorSetInputs(g.ptr, inputs.ptr)
+	if err := resultError(g.runtime.funcs, result); err != nil {
+		return fmt.Errorf("failed to set inputs: %w", err)
+	}
+	return nil
+}
+
 // GenerateNextToken generates the next token in the sequence.
 func (g *Generator) GenerateNextToken() error {
 	result := g.runtime.funcs.GeneratorGenerateNextToken(g.ptr)
