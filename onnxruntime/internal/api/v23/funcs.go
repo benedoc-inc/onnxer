@@ -29,10 +29,10 @@ type Funcs struct {
 	releaseMemoryInfo   func(api.OrtMemoryInfo)
 
 	// Session options
-	createSessionOptions                    func(*api.OrtSessionOptions) api.OrtStatus
-	setIntraOpNumThreads                    func(api.OrtSessionOptions, int32) api.OrtStatus
-	sessionOptionsAppendExecutionProvider   func(api.OrtSessionOptions, *byte, **byte, **byte, uintptr) api.OrtStatus
-	releaseSessionOptions                   func(api.OrtSessionOptions)
+	createSessionOptions                  func(*api.OrtSessionOptions) api.OrtStatus
+	setIntraOpNumThreads                  func(api.OrtSessionOptions, int32) api.OrtStatus
+	sessionOptionsAppendExecutionProvider func(api.OrtSessionOptions, *byte, **byte, **byte, uintptr) api.OrtStatus
+	releaseSessionOptions                 func(api.OrtSessionOptions)
 
 	// Session
 	createSession          func(api.OrtEnv, *byte, api.OrtSessionOptions, *api.OrtSession) api.OrtStatus
