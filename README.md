@@ -166,6 +166,9 @@ See the [`examples/`](./examples/) directory for complete usage examples:
 - [**string-tensor**](./examples/string-tensor/) — String tensor inputs for NLP
 - [**metadata**](./examples/metadata/) — Model introspection
 - [**pool**](./examples/pool/) — Concurrent inference with session pooling, hooks, warm-up
+- [**profiling**](./examples/profiling/) — Per-operator profiling and latency analysis
+- [**lora**](./examples/lora/) — LoRA adapter hot-swap for fine-tuned models
+- [**io-binding**](./examples/io-binding/) — IO binding for optimized repeated inference
 - [**cancellation**](./examples/cancellation/) — Context-based cancellation
 - [**genai/phi3**](./examples/genai/phi3/) — Text generation with Phi-3
 - [**genai/phi3.5-vision**](./examples/genai/phi3.5-vision/) — Multimodal vision-language
