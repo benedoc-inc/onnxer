@@ -425,6 +425,48 @@ func TestNewTensorValue(t *testing.T) {
 		assertTensorData(t, tensor, data, shape)
 	})
 
+	t.Run("Float16", func(t *testing.T) {
+		data := []Float16{NewFloat16(1.0), NewFloat16(2.0), NewFloat16(0.5)}
+		shape := []int64{3}
+
+		tensor, err := NewTensorValue(runtime, data, shape)
+		if err != nil {
+			t.Fatalf("Failed to create Float16 tensor: %v", err)
+		}
+		defer tensor.Close()
+
+		elemType, err := tensor.GetTensorElementType()
+		if err != nil {
+			t.Fatalf("Failed to get element type: %v", err)
+		}
+		if elemType != ONNXTensorElementDataTypeFloat16 {
+			t.Errorf("Expected float16 type (%d), got %d", ONNXTensorElementDataTypeFloat16, elemType)
+		}
+
+		assertTensorData(t, tensor, data, shape)
+	})
+
+	t.Run("BFloat16", func(t *testing.T) {
+		data := []BFloat16{NewBFloat16(1.0), NewBFloat16(2.0), NewBFloat16(0.5)}
+		shape := []int64{3}
+
+		tensor, err := NewTensorValue(runtime, data, shape)
+		if err != nil {
+			t.Fatalf("Failed to create BFloat16 tensor: %v", err)
+		}
+		defer tensor.Close()
+
+		elemType, err := tensor.GetTensorElementType()
+		if err != nil {
+			t.Fatalf("Failed to get element type: %v", err)
+		}
+		if elemType != ONNXTensorElementDataTypeBFloat16 {
+			t.Errorf("Expected bfloat16 type (%d), got %d", ONNXTensorElementDataTypeBFloat16, elemType)
+		}
+
+		assertTensorData(t, tensor, data, shape)
+	})
+
 	t.Run("EmptyData", func(t *testing.T) {
 		// Test with empty float32 slice
 		_, err := NewTensorValue(runtime, []float32{}, []int64{0})

@@ -5,7 +5,31 @@ Pure Go bindings for [ONNX Runtime](https://github.com/microsoft/onnxruntime) us
 
 This library provides a pure Go interface to ONNX Runtime without requiring cgo, enabling cross-platform machine learning inference in Go applications.
 
-Forked from [shota3506/onnxruntime-purego](https://github.com/shota3506/onnxruntime-purego).
+## Why onnxer?
+
+- **Pure Go** — no CGO required. Cross-compiles everywhere Go does.
+- **GenAI support** — text generation and multimodal inference via ONNX Runtime GenAI.
+- **Multi-version API** — supports ORT 1.23.x and 1.24.x simultaneously.
+- **Generics tensor API** — type-safe `NewTensorValue[T]` / `GetTensorData[T]` with compile-time checks.
+- **Context cancellation** — `context.Context` wired through to ORT RunOptions for real cancellation.
+- **Comprehensive** — string tensors, IO binding, model metadata, type introspection, Float16/BFloat16, sequence/map outputs.
+
+## Feature Comparison
+
+| Feature | onnxer | onnxruntime_go |
+|---------|--------|----------------|
+| Pure Go (no CGO) | Yes | No |
+| GenAI support | Yes | No |
+| Multi-version API (v23+v24) | Yes | No |
+| Generics tensor API | Yes | No |
+| String tensors | Yes | Yes |
+| Session options (graph opt, threading, memory) | Yes | Yes |
+| Model metadata | Yes | Yes |
+| Context cancellation (wired to ORT) | Yes | No |
+| IO binding | Yes | Yes |
+| Type introspection | Yes | Yes |
+| Sequence/Map outputs | Yes | Yes |
+| Float16/BFloat16 | Yes | Yes |
 
 ## Supported Versions
 
@@ -13,10 +37,6 @@ Forked from [shota3506/onnxruntime-purego](https://github.com/shota3506/onnxrunt
 |---------|-------------------|
 | ONNX Runtime | 1.23.x, 1.24.x |
 | ONNX Runtime GenAI | 0.11.x |
-
-## ONNX Runtime GenAI Support
-
-This library also includes experimental support for [ONNX Runtime GenAI](https://github.com/microsoft/onnxruntime-genai), enabling text generation with large language models. See [`examples/`](./examples/) for usage examples.
 
 ## Prerequisites
 
@@ -42,6 +62,60 @@ Alternatively, you can specify a custom path when creating the runtime.
 go get github.com/benedoc-inc/onnxer
 ```
 
+## Quick Start
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"os"
+
+	ort "github.com/benedoc-inc/onnxer/onnxruntime"
+)
+
+func main() {
+	runtime, _ := ort.NewRuntime("", 23)
+	defer runtime.Close()
+
+	env, _ := runtime.NewEnv("example", ort.LoggingLevelWarning)
+	defer env.Close()
+
+	f, _ := os.Open("model.onnx")
+	defer f.Close()
+
+	session, _ := runtime.NewSessionFromReader(env, f, &ort.SessionOptions{
+		IntraOpNumThreads: 4,
+		GraphOptimization: ort.GraphOptimizationAll,
+	})
+	defer session.Close()
+
+	input, _ := ort.NewTensorValue(runtime, []float32{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, []int64{1, 10})
+	defer input.Close()
+
+	outputs, _ := session.Run(context.Background(), map[string]*ort.Value{
+		session.InputNames()[0]: input,
+	})
+
+	data, shape, _ := ort.GetTensorData[float32](outputs[session.OutputNames()[0]])
+	fmt.Printf("Output shape: %v, data: %v\n", shape, data)
+}
+```
+
 ## Examples
 
-See the [`examples/`](./examples/) directory for complete usage examples.
+See the [`examples/`](./examples/) directory for complete usage examples:
+
+- [**resnet**](./examples/resnet/) — Image classification
+- [**roberta-sentiment**](./examples/roberta-sentiment/) — Sentiment analysis
+- [**yolov10**](./examples/yolov10/) — Object detection
+- [**string-tensor**](./examples/string-tensor/) — String tensor inputs for NLP
+- [**metadata**](./examples/metadata/) — Model introspection
+- [**cancellation**](./examples/cancellation/) — Context-based cancellation
+- [**genai/phi3**](./examples/genai/phi3/) — Text generation with Phi-3
+- [**genai/phi3.5-vision**](./examples/genai/phi3.5-vision/) — Multimodal vision-language
+
+## ONNX Runtime GenAI Support
+
+This library also includes experimental support for [ONNX Runtime GenAI](https://github.com/microsoft/onnxruntime-genai), enabling text generation with large language models. See the GenAI examples for details.

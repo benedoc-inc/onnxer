@@ -1,0 +1,278 @@
+#!/usr/bin/env bash
+# Pre-push hook - runs tests and comprehensive checks before push
+# Note: This hook is automatically skipped when using `git push --no-verify`
+# shellcheck disable=SC2001
+set -e
+
+# Optional environment variables
+readonly VERBOSE="${VERBOSE:-false}"
+readonly ALLOW_DIRTY_PUSH="${ALLOW_DIRTY_PUSH:-false}"
+readonly ALLOW_PUSH_TO_MAIN="${ALLOW_PUSH_TO_MAIN:-false}"
+readonly SKIP_ENV_CHECKS="${SKIP_ENV_CHECKS:-false}"
+readonly SKIP_LINTS="${SKIP_LINTS:-false}"
+readonly SKIP_TESTS="${SKIP_TESTS:-false}"
+
+# Auto-configure if needed
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+[ -d "$REPO_ROOT/.githooks" ] && [ "$(git config --get core.hooksPath 2>/dev/null)" != "$REPO_ROOT/.githooks" ] && git config core.hooksPath "$REPO_ROOT/.githooks" 2>/dev/null || true
+
+display_error_summary() {
+    echo "" >&2
+    echo "PRE-PUSH HOOK FAILED: $1" >&2
+    [[ -n "$2" ]] && { echo "Command:" >&2; echo "  $2" >&2; }
+    echo "  To skip: git push --no-verify" >&2
+    echo "" >&2
+    printf '\a'
+}
+
+echo "Running pre-push checks..."
+t_start_global=$SECONDS
+
+# Find timeout command
+TIMEOUT_CMD=""
+if command -v timeout > /dev/null 2>&1; then
+    TIMEOUT_CMD="timeout"
+elif command -v gtimeout > /dev/null 2>&1; then
+    TIMEOUT_CMD="gtimeout"
+fi
+
+run_command_captured() {
+    local timeout_duration="$1"
+    shift
+
+    set +e
+    local cmd=("$@")
+    if [ -n "$TIMEOUT_CMD" ] && [ -n "$timeout_duration" ]; then
+        cmd=("$TIMEOUT_CMD" "$timeout_duration" "${cmd[@]}")
+    fi
+
+    if [ "$VERBOSE" = "true" ]; then
+        CMD_OUTPUT=$(set -o pipefail; "${cmd[@]}" 2>&1 | tee /dev/stderr)
+        CMD_EXIT_CODE=$?
+    else
+        CMD_OUTPUT=$("${cmd[@]}" 2>&1)
+        CMD_EXIT_CODE=$?
+    fi
+    set -e
+}
+
+assert_cmd_success() {
+    local name="$1"
+    local timeout_desc="$2"
+    local summary="$3"
+    local grep_pattern="${4:-(fail|error|panic|fatal)}"
+
+    if [ $CMD_EXIT_CODE -eq 124 ] || [ $CMD_EXIT_CODE -eq 143 ]; then
+        echo "  TIMED OUT: $name after $timeout_desc!"
+        display_error_summary "$name timed out (exceeded $timeout_desc limit)"
+        exit 1
+    fi
+
+    if [ $CMD_EXIT_CODE -ne 0 ]; then
+        echo "FAILED: $name (exit code: $CMD_EXIT_CODE)" >&2
+        if [ -n "$CMD_OUTPUT" ]; then
+            echo "$CMD_OUTPUT" | grep -Ei "$grep_pattern" | tail -20 | sed 's/^/  /' >&2
+        fi
+        display_error_summary "$summary"
+        exit 1
+    fi
+}
+
+# ------------------------------------------------------------------------------
+# 1. BRANCH PROTECTION
+# ------------------------------------------------------------------------------
+
+pushed_branch=""
+pushed_sha=""
+while read -r local_ref local_sha remote_ref remote_sha; do
+    if [[ "$local_ref" =~ ^refs/heads/(.+)$ ]]; then
+        pushed_branch="${BASH_REMATCH[1]}"
+        pushed_sha="$local_sha"
+        break
+    fi
+done
+
+if [ -z "$pushed_branch" ]; then
+    pushed_branch=$(git symbolic-ref --short HEAD 2>/dev/null || echo "")
+fi
+
+if [ "$pushed_branch" = "main" ] || [ "$pushed_branch" = "master" ]; then
+    echo "  Warning: Pushing directly to $pushed_branch branch"
+    if $ALLOW_PUSH_TO_MAIN; then
+        echo "  Overriding: allowing push to $pushed_branch"
+    else
+        echo "  Aborting. To override: ALLOW_PUSH_TO_MAIN=true git push"
+        display_error_summary "Direct push to $pushed_branch denied"
+        exit 1
+    fi
+fi
+
+# ------------------------------------------------------------------------------
+# 2. DETECT CHANGES
+# ------------------------------------------------------------------------------
+
+push_base_ref=""
+if git rev-parse --verify "refs/remotes/origin/$pushed_branch" >/dev/null 2>&1; then
+    push_base_ref="refs/remotes/origin/$pushed_branch"
+else
+    base_branch="main"
+    if ! git rev-parse --verify "refs/remotes/origin/$base_branch" >/dev/null 2>&1; then
+        base_branch="master"
+    fi
+    if git rev-parse --verify "refs/remotes/origin/$base_branch" >/dev/null 2>&1; then
+        merge_base=$(git merge-base "refs/remotes/origin/$base_branch" "$pushed_branch" 2>/dev/null || echo "")
+        if [ -n "$merge_base" ]; then
+            push_base_ref="$merge_base"
+        else
+            push_base_ref="refs/remotes/origin/$base_branch"
+        fi
+    else
+        push_base_ref="$pushed_branch~1"
+    fi
+fi
+
+changed_files=$(git diff --name-only "$push_base_ref..$pushed_branch" 2>/dev/null || echo "")
+if [ -z "$changed_files" ]; then
+    echo "  No changes detected, skipping checks"
+    echo "Pre-push checks passed!"
+    exit 0
+fi
+
+go_changed=$(echo "$changed_files" | grep '\.go$' || true)
+if [ -z "$go_changed" ]; then
+    echo "  No Go file changes detected, skipping checks"
+    echo "Pre-push checks passed!"
+    exit 0
+fi
+
+echo "  $(echo "$go_changed" | wc -l | tr -d ' ') Go files changed"
+
+# ------------------------------------------------------------------------------
+# 2b. LARGE FILE CHECK
+# ------------------------------------------------------------------------------
+readonly MAX_BLOB_BYTES=$((5 * 1024 * 1024))  # 5 MiB
+
+large_blobs=$(git rev-list --objects "$push_base_ref..$pushed_branch" 2>/dev/null \
+    | git cat-file --batch-check='%(objecttype) %(objectname) %(objectsize) %(rest)' 2>/dev/null \
+    | awk -v max="$MAX_BLOB_BYTES" '
+        $1 != "blob" { next }
+        $3 <= max { next }
+        {
+            path = $4
+            for (i = 5; i <= NF; i++) path = path " " $i
+            print $3, path
+        }
+    ')
+
+if [ -n "$large_blobs" ]; then
+    echo "  Push blocked: large file(s) detected (max 5 MiB)" >&2
+    echo "$large_blobs" | while read -r size path; do
+        printf "    %s bytes  %s\n" "$size" "$path" >&2
+    done
+    display_error_summary "Large file(s) in pushed commits"
+    exit 1
+fi
+echo "  No large files in pushed commits"
+
+# ------------------------------------------------------------------------------
+# 2c. VERIFY CLEAN STATE
+# ------------------------------------------------------------------------------
+if [ "${ALLOW_DIRTY_PUSH}" != "true" ]; then
+    current_head=$(git rev-parse HEAD)
+
+    if [ -n "$pushed_sha" ] && [[ ! "$pushed_sha" =~ ^0+$ ]] && [ "$pushed_sha" != "$current_head" ]; then
+        echo "  ERROR: Pushed commit ($pushed_sha) does not match HEAD ($current_head)" >&2
+        echo "    To override: ALLOW_DIRTY_PUSH=true git push" >&2
+        display_error_summary "Pushed commit does not match HEAD"
+        exit 1
+    fi
+
+    if [ -n "$(git status --porcelain)" ]; then
+        echo "  ERROR: Uncommitted changes detected" >&2
+        git status --short | head -5 | sed 's/^/    /' >&2
+        echo "    To override: ALLOW_DIRTY_PUSH=true git push" >&2
+        display_error_summary "Uncommitted changes detected"
+        exit 1
+    fi
+    echo "  Working directory is clean"
+fi
+
+# ------------------------------------------------------------------------------
+# 3. VERIFY ENVIRONMENT
+# ------------------------------------------------------------------------------
+
+if ! $SKIP_ENV_CHECKS; then
+    if ! command -v go > /dev/null 2>&1; then
+        display_error_summary "Go not found! Please install Go"
+        exit 1
+    fi
+    echo "  Go environment OK"
+fi
+
+# ------------------------------------------------------------------------------
+# 4. LINTING
+# ------------------------------------------------------------------------------
+
+if ! $SKIP_LINTS; then
+    t_start_lint=$SECONDS
+    echo "  Running Go formatting check..."
+    cd "$REPO_ROOT"
+
+    # Collect existing Go files from the changeset
+    go_files_existing=""
+    for f in $go_changed; do
+        [ -f "$REPO_ROOT/$f" ] && go_files_existing="$go_files_existing $f"
+    done
+
+    if [ -n "$go_files_existing" ]; then
+        run_command_captured "" gofmt -l $go_files_existing
+        if [ -n "$CMD_OUTPUT" ]; then
+            echo "  ERROR: Go files not formatted:" >&2
+            echo "$CMD_OUTPUT" | head -10 | sed 's/^/    /' >&2
+            display_error_summary "Run: gofmt -w <files>"
+            exit 1
+        fi
+    fi
+
+    echo "  Running go vet..."
+    run_command_captured "" go vet ./...
+    if [ $CMD_EXIT_CODE -ne 0 ]; then
+        echo "  ERROR: go vet found issues:" >&2
+        echo "$CMD_OUTPUT" | head -20 | sed 's/^/    /' >&2
+        display_error_summary "go vet found issues"
+        exit 1
+    fi
+
+    echo "  Running go build..."
+    run_command_captured "" go build ./...
+    if [ $CMD_EXIT_CODE -ne 0 ]; then
+        echo "  ERROR: Build failed:" >&2
+        echo "$CMD_OUTPUT" | head -20 | sed 's/^/    /' >&2
+        display_error_summary "go build failed"
+        exit 1
+    fi
+
+    echo "  Linting passed (in $((SECONDS - t_start_lint))s)"
+fi
+
+# ------------------------------------------------------------------------------
+# 5. RUN TESTS
+# ------------------------------------------------------------------------------
+
+if ! $SKIP_TESTS; then
+    t_start_tests=$SECONDS
+
+    # Run pure Go tests (no ORT library needed)
+    echo "  Running Go tests with 5 minute timeout..."
+    cd "$REPO_ROOT"
+
+    PARALLEL=$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)
+    run_command_captured "5m" go test ./... -timeout=60s -parallel=$PARALLEL
+    assert_cmd_success "Go tests" "5 minutes" "Go tests failed"
+
+    echo "  Tests passed (in $((SECONDS - t_start_tests))s)"
+fi
+
+echo "All pre-push checks passed! (in $((SECONDS - t_start_global))s)"
+printf '\a'
+exit 0

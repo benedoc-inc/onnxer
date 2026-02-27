@@ -22,7 +22,7 @@ func newTestRuntime(t *testing.T) *Runtime {
 	// Use environment variable if set, otherwise let the system search standard paths
 	rt, err := NewRuntime(libraryPath)
 	if err != nil {
-		t.Fatalf("Failed to create runtime: %v", err)
+		t.Skipf("Skipping: GenAI library not available: %v", err)
 	}
 	t.Cleanup(func() { rt.Close() })
 

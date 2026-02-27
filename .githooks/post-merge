@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Auto-configure hooks on merge/pull
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+[ -d "$REPO_ROOT/.githooks" ] && git config core.hooksPath "$REPO_ROOT/.githooks" 2>/dev/null || true
+exit 0

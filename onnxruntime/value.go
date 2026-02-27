@@ -9,7 +9,8 @@ import (
 )
 
 // TensorData is a type constraint for supported tensor data types.
-// It includes all numeric types, bool, and complex types that are supported by ONNX Runtime.
+// It includes all numeric types, bool, Float16, and BFloat16 that are supported by ONNX Runtime.
+// Float16 and BFloat16 are covered by ~uint16 since their underlying type is uint16.
 type TensorData interface {
 	~float32 | ~float64 |
 		~int8 | ~int16 | ~int32 | ~int64 |
@@ -193,6 +194,12 @@ func NewTensorValue[T TensorData](r *Runtime, data []T, shape []int64) (*Value, 
 	case uint8:
 		dataType = ONNXTensorElementDataTypeUint8
 		elementSize = 1
+	case Float16:
+		dataType = ONNXTensorElementDataTypeFloat16
+		elementSize = 2
+	case BFloat16:
+		dataType = ONNXTensorElementDataTypeBFloat16
+		elementSize = 2
 	case uint16:
 		dataType = ONNXTensorElementDataTypeUint16
 		elementSize = 2
@@ -270,6 +277,10 @@ func GetTensorData[T TensorData](v *Value) ([]T, []int64, error) {
 		expectedType = ONNXTensorElementDataTypeInt64
 	case uint8:
 		expectedType = ONNXTensorElementDataTypeUint8
+	case Float16:
+		expectedType = ONNXTensorElementDataTypeFloat16
+	case BFloat16:
+		expectedType = ONNXTensorElementDataTypeBFloat16
 	case uint16:
 		expectedType = ONNXTensorElementDataTypeUint16
 	case uint32:

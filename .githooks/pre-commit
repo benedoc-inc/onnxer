@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+# Pre-commit hook - fast checks only (<5s)
+# Note: This hook is automatically skipped when using `git commit --no-verify`
+set -e
+
+# Auto-configure if needed
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+[ -d "$REPO_ROOT/.githooks" ] && [ "$(git config --get core.hooksPath 2>/dev/null)" != "$REPO_ROOT/.githooks" ] && git config core.hooksPath "$REPO_ROOT/.githooks" 2>/dev/null || true
+
+echo "Running pre-commit checks..."
+
+# Only check staged files for speed
+staged=$(git diff --cached --name-only --diff-filter=ACM 2>/dev/null || true)
+[ -z "$staged" ] && echo "  No staged files to check" && exit 0
+
+echo "  Checking for merge conflicts..."
+conflict_check=$(echo "$staged" | grep -v "^\.githooks/" | xargs git diff --cached -- 2>/dev/null | grep -E "^\+.*<<<<<<< HEAD" || true)
+if [ -n "$conflict_check" ]; then
+  echo "  ERROR: Merge conflict markers found in staged changes!"
+  exit 1
+fi
+
+echo "  Checking for private keys..."
+key_check=$(echo "$staged" | grep -v "^\.githooks/" | xargs git diff --cached -- 2>/dev/null | grep -E "(BEGIN (RSA|DSA|EC|OPENSSH) PRIVATE KEY|-----BEGIN.*PRIVATE KEY-----)" || true)
+if [ -n "$key_check" ]; then
+  echo "  ERROR: Potential private key detected in staged changes!"
+  exit 1
+fi
+
+echo "  Checking for binary and suspicious files..."
+safe_extensionless="Makefile|Dockerfile|Procfile|LICENSE|LICENCE|README|CHANGELOG|CONTRIBUTING|AUTHORS|CODEOWNERS|CLAUDE"
+
+large_files=0
+suspect_files=0
+while IFS= read -r file; do
+  if [ -f "$file" ]; then
+    basename_file=$(basename "$file")
+    if ! echo "$basename_file" | grep -q '\.'; then
+      if ! echo "$basename_file" | grep -qE "^($safe_extensionless)$"; then
+        if file "$file" 2>/dev/null | grep -qE "(executable|binary|Mach-O|ELF|PE32|shared object|archive)"; then
+          echo "  ERROR: Binary file detected: $file"
+          echo "    Add to .gitignore and remove: git rm --cached $file"
+          suspect_files=$((suspect_files + 1))
+        fi
+      fi
+    fi
+
+    # Block large binaries (>1MB)
+    size=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null || echo "0")
+    if [ "$size" -gt 1048576 ]; then
+      if file "$file" 2>/dev/null | grep -qE "(executable|binary|Mach-O|ELF|PE32)"; then
+        size_mb=$((size / 1048576))
+        echo "  ERROR: Large binary file detected: $file (${size_mb}MB)"
+        large_files=$((large_files + 1))
+      fi
+    fi
+  fi
+done < <(echo "$staged" | grep -v "^\.githooks/" || true)
+
+if [ "$large_files" -gt 0 ] || [ "$suspect_files" -gt 0 ]; then
+  echo "  Commit blocked: $((large_files + suspect_files)) binary/suspicious file(s) detected"
+  exit 1
+fi
+
+echo "  Checking git configuration..."
+if ! git config user.email | grep -q "@"; then
+  echo "  ERROR: Git email not set. Run: git config --local user.email <email>"
+  exit 1
+fi
+
+# Go formatting and linting
+go_files=$(echo "$staged" | grep '\.go$' || true)
+if [ -n "$go_files" ] && command -v gofmt >/dev/null 2>&1; then
+  echo "  Auto-formatting Go files..."
+  files_reformatted=0
+
+  gofmt -w $go_files 2>/dev/null || true
+
+  for file in $go_files; do
+    if [ -f "$file" ] && ! git diff --quiet -- "$file" 2>/dev/null; then
+      git add "$file"
+      echo "    Formatted: $file"
+      files_reformatted=$((files_reformatted + 1))
+    fi
+  done
+
+  if [ "$files_reformatted" -gt 0 ]; then
+    echo "    Auto-formatted and re-staged $files_reformatted file(s)"
+  fi
+
+  echo "  Checking Go compilation and vet..."
+  cd "$REPO_ROOT"
+
+  # Build the main module
+  set +e
+  build_output=$(go build ./... 2>&1)
+  build_exit=$?
+  set -e
+
+  if [ $build_exit -ne 0 ]; then
+    echo "  ERROR: Go compilation failed:"
+    echo "$build_output" | head -20
+    exit 1
+  fi
+
+  # Run go vet
+  set +e
+  vet_output=$(go vet ./... 2>&1)
+  vet_exit=$?
+  set -e
+
+  if [ $vet_exit -ne 0 ]; then
+    echo "  ERROR: go vet found issues:"
+    echo "$vet_output" | head -20
+    exit 1
+  fi
+
+  echo "    Go code compiles and passes vet"
+fi
+
+echo "Pre-commit checks passed!"
+exit 0

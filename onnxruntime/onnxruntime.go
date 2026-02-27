@@ -117,6 +117,32 @@ const (
 	ONNXTensorElementDataTypeComplex64 ONNXTensorElementDataType = 14
 	// ONNXTensorElementDataTypeComplex128 indicates complex128 data type.
 	ONNXTensorElementDataTypeComplex128 ONNXTensorElementDataType = 15
+	// ONNXTensorElementDataTypeBFloat16 indicates bfloat16 data type.
+	ONNXTensorElementDataTypeBFloat16 ONNXTensorElementDataType = 16
+)
+
+// GraphOptimizationLevel controls the level of graph optimization applied to a model.
+type GraphOptimizationLevel int32
+
+const (
+	// GraphOptimizationDisabled disables all graph optimizations.
+	GraphOptimizationDisabled GraphOptimizationLevel = 0
+	// GraphOptimizationBasic enables basic graph optimizations (constant folding, redundant node removal).
+	GraphOptimizationBasic GraphOptimizationLevel = 1
+	// GraphOptimizationExtended enables extended optimizations (node fusions).
+	GraphOptimizationExtended GraphOptimizationLevel = 2
+	// GraphOptimizationAll enables all available optimizations.
+	GraphOptimizationAll GraphOptimizationLevel = 99
+)
+
+// ExecutionMode controls how operators are executed within a graph.
+type ExecutionMode int32
+
+const (
+	// ExecutionModeSequential executes operators sequentially.
+	ExecutionModeSequential ExecutionMode = 0
+	// ExecutionModeParallel executes independent operators in parallel.
+	ExecutionModeParallel ExecutionMode = 1
 )
 
 // allocatorType represents memory allocator types.

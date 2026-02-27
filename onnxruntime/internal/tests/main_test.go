@@ -38,8 +38,8 @@ func TestMain(m *testing.M) {
 	var err error
 	testRuntime, err = onnxruntime.NewRuntime(libPath, 23)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to create runtime: %v\n", err)
-		os.Exit(1)
+		fmt.Fprintf(os.Stderr, "Skipping e2e tests: ONNX Runtime library not available: %v\n", err)
+		os.Exit(0)
 	}
 	defer testRuntime.Close()
 

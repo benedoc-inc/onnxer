@@ -28,9 +28,36 @@ type SessionOptions struct {
 	// execution within nodes. A value of 0 uses the default number of threads.
 	IntraOpNumThreads int
 
+	// InterOpNumThreads sets the number of threads used for parallelizing
+	// execution of the graph (across nodes). A value of 0 uses the default.
+	InterOpNumThreads int
+
 	// ExecutionProviders specifies the execution providers to use, in order of preference.
 	// If empty, the default provider(s) will be used.
 	ExecutionProviders []ExecutionProvider
+
+	// GraphOptimization sets the graph optimization level.
+	// Zero value (GraphOptimizationDisabled) means no optimization.
+	GraphOptimization GraphOptimizationLevel
+
+	// ExecutionMode controls sequential vs parallel operator execution.
+	// Zero value (ExecutionModeSequential) means sequential.
+	ExecutionMode ExecutionMode
+
+	// CpuMemArena controls whether the CPU memory arena is enabled.
+	// nil means use the ORT default (enabled). Explicit true/false overrides.
+	CpuMemArena *bool
+
+	// MemPattern controls whether memory pattern optimization is enabled.
+	// nil means use the ORT default (enabled). Explicit true/false overrides.
+	MemPattern *bool
+
+	// LogSeverityLevel overrides the session's log severity level.
+	// nil means use the environment default.
+	LogSeverityLevel *LoggingLevel
+
+	// ConfigEntries provides arbitrary key-value configuration entries.
+	ConfigEntries map[string]string
 }
 
 // Session represents an ONNX Runtime inference session that can execute
@@ -58,11 +85,8 @@ func (r *Runtime) NewSession(env *Env, modelPath string, options *SessionOptions
 			}
 		}()
 
-		if err := r.configureIntraOpNumThreads(optsPtr, options); err != nil {
-			return nil, fmt.Errorf("failed to configure intra-op num threads: %w", err)
-		}
-		if err := r.configureExecutionProviders(optsPtr, options); err != nil {
-			return nil, fmt.Errorf("failed to configure execution providers: %w", err)
+		if err := r.configureSessionOptions(optsPtr, options); err != nil {
+			return nil, err
 		}
 	}
 
@@ -113,11 +137,8 @@ func (r *Runtime) NewSessionFromReader(env *Env, modelReader io.Reader, options 
 			}
 		}()
 
-		if err := r.configureIntraOpNumThreads(optsPtr, options); err != nil {
-			return nil, fmt.Errorf("failed to configure intra-op num threads: %w", err)
-		}
-		if err := r.configureExecutionProviders(optsPtr, options); err != nil {
-			return nil, fmt.Errorf("failed to configure execution providers: %w", err)
+		if err := r.configureSessionOptions(optsPtr, options); err != nil {
+			return nil, err
 		}
 	}
 
@@ -309,7 +330,7 @@ func (s *Session) Run(ctx context.Context, inputs map[string]*Value, opts ...Run
 	}
 
 	// Call the low-level run method
-	outputValues, err := s.run(inputNames, inputValues, config.outputNames)
+	outputValues, err := s.run(ctx, inputNames, inputValues, config.outputNames)
 	if err != nil {
 		return nil, err
 	}
@@ -322,11 +343,49 @@ func (s *Session) Run(ctx context.Context, inputs map[string]*Value, opts ...Run
 	return outputs, nil
 }
 
+// createRunOptionsForCtx creates OrtRunOptions for context cancellation support.
+// Returns the run options pointer and a cleanup function that must be called.
+func (s *Session) createRunOptionsForCtx(ctx context.Context) (api.OrtRunOptions, func(), error) {
+	if ctx == nil || ctx.Done() == nil {
+		// No cancellation needed — pass zero (NULL)
+		return 0, func() {}, nil
+	}
+
+	var runOpts api.OrtRunOptions
+	status := s.runtime.apiFuncs.CreateRunOptions(&runOpts)
+	if err := s.runtime.statusError(status); err != nil {
+		return 0, nil, fmt.Errorf("failed to create run options: %w", err)
+	}
+
+	// Watch for context cancellation in a goroutine
+	done := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			s.runtime.apiFuncs.RunOptionsSetTerminate(runOpts)
+		case <-done:
+		}
+	}()
+
+	cleanup := func() {
+		close(done)
+		s.runtime.apiFuncs.ReleaseRunOptions(runOpts)
+	}
+
+	return runOpts, cleanup, nil
+}
+
 // run executes the model with the provided inputs and returns the computed outputs.
-func (s *Session) run(inputNames []string, inputs []*Value, outputNames []string) ([]*Value, error) {
+func (s *Session) run(ctx context.Context, inputNames []string, inputs []*Value, outputNames []string) ([]*Value, error) {
 	if len(inputNames) != len(inputs) {
 		return nil, fmt.Errorf("number of input names (%d) must match number of inputs (%d)", len(inputNames), len(inputs))
 	}
+
+	runOpts, cleanup, err := s.createRunOptionsForCtx(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
 
 	// Prepare input name pointers
 	inputNamePtrs := make([]*byte, len(inputNames))
@@ -356,7 +415,7 @@ func (s *Session) run(inputNames []string, inputs []*Value, outputNames []string
 	// Call Run
 	status := s.runtime.apiFuncs.Run(
 		s.ptr,
-		0, // run options (NULL)
+		runOpts,
 		&inputNamePtrs[0],
 		&inputValuePtrs[0],
 		uintptr(len(inputs)),
@@ -377,14 +436,80 @@ func (s *Session) run(inputNames []string, inputs []*Value, outputNames []string
 	return outputs, nil
 }
 
-func (r *Runtime) configureIntraOpNumThreads(optsPtr api.OrtSessionOptions, options *SessionOptions) error {
-	if options.IntraOpNumThreads <= 0 {
-		return nil
+// configureSessionOptions applies all session options to the ORT session options pointer.
+func (r *Runtime) configureSessionOptions(optsPtr api.OrtSessionOptions, options *SessionOptions) error {
+	if options.IntraOpNumThreads > 0 {
+		status := r.apiFuncs.SetIntraOpNumThreads(optsPtr, int32(options.IntraOpNumThreads))
+		if err := r.statusError(status); err != nil {
+			return fmt.Errorf("failed to set intra-op num threads: %w", err)
+		}
 	}
-	status := r.apiFuncs.SetIntraOpNumThreads(optsPtr, int32(options.IntraOpNumThreads))
-	if err := r.statusError(status); err != nil {
-		return fmt.Errorf("failed to set intra-op num threads: %w", err)
+
+	if options.InterOpNumThreads > 0 {
+		status := r.apiFuncs.SetInterOpNumThreads(optsPtr, int32(options.InterOpNumThreads))
+		if err := r.statusError(status); err != nil {
+			return fmt.Errorf("failed to set inter-op num threads: %w", err)
+		}
 	}
+
+	if options.GraphOptimization != 0 {
+		status := r.apiFuncs.SetSessionGraphOptimizationLevel(optsPtr, int32(options.GraphOptimization))
+		if err := r.statusError(status); err != nil {
+			return fmt.Errorf("failed to set graph optimization level: %w", err)
+		}
+	}
+
+	if options.ExecutionMode != 0 {
+		status := r.apiFuncs.SetSessionExecutionMode(optsPtr, int32(options.ExecutionMode))
+		if err := r.statusError(status); err != nil {
+			return fmt.Errorf("failed to set execution mode: %w", err)
+		}
+	}
+
+	if options.CpuMemArena != nil {
+		var status api.OrtStatus
+		if *options.CpuMemArena {
+			status = r.apiFuncs.EnableCpuMemArena(optsPtr)
+		} else {
+			status = r.apiFuncs.DisableCpuMemArena(optsPtr)
+		}
+		if err := r.statusError(status); err != nil {
+			return fmt.Errorf("failed to configure CPU memory arena: %w", err)
+		}
+	}
+
+	if options.MemPattern != nil {
+		var status api.OrtStatus
+		if *options.MemPattern {
+			status = r.apiFuncs.EnableMemPattern(optsPtr)
+		} else {
+			status = r.apiFuncs.DisableMemPattern(optsPtr)
+		}
+		if err := r.statusError(status); err != nil {
+			return fmt.Errorf("failed to configure memory pattern: %w", err)
+		}
+	}
+
+	if options.LogSeverityLevel != nil {
+		status := r.apiFuncs.SetSessionLogSeverityLevel(optsPtr, int32(*options.LogSeverityLevel))
+		if err := r.statusError(status); err != nil {
+			return fmt.Errorf("failed to set log severity level: %w", err)
+		}
+	}
+
+	for k, v := range options.ConfigEntries {
+		keyBytes := append([]byte(k), 0)
+		valBytes := append([]byte(v), 0)
+		status := r.apiFuncs.AddSessionConfigEntry(optsPtr, &keyBytes[0], &valBytes[0])
+		if err := r.statusError(status); err != nil {
+			return fmt.Errorf("failed to add session config entry %q: %w", k, err)
+		}
+	}
+
+	if err := r.configureExecutionProviders(optsPtr, options); err != nil {
+		return err
+	}
+
 	return nil
 }
 

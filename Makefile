@@ -1,4 +1,4 @@
-.PHONY: help test test-docker test-local clean generate generate-ort generate-genai download-ort download-genai setup-workspace lint
+.PHONY: help setup test test-docker test-local clean generate generate-ort generate-genai download-ort download-genai setup-workspace lint
 
 # ONNX Runtime version (can be overridden)
 ONNXRUNTIME_VERSION ?= 1.23.0
@@ -38,6 +38,7 @@ FLAGS ?=
 help:
 	@echo "Available targets:"
 	@echo ""
+	@echo "  make setup                             - First-time setup (git hooks)"
 	@echo "  make test                              - Run all tests"
 	@echo "  make test FLAGS=-v                     - Run tests with verbose output"
 	@echo "  make test FLAGS=\"-v -run TestName\"     - Run specific test with verbose"
@@ -65,6 +66,12 @@ help:
 	@echo "  GenAI version: $(ONNXRUNTIME_GENAI_VERSION)"
 	@echo "  Library path: $(ONNXRUNTIME_LIB_PATH)"
 
+# First-time setup
+setup:
+	@echo "Configuring git hooks..."
+	@git config core.hooksPath .githooks
+	@echo "Done! Git hooks configured."
+
 # Run tests
 test: test-docker
 
@@ -86,7 +93,7 @@ MODULE_PATH := github.com/benedoc-inc/onnxer
 
 # Setup go.work for local development
 setup-workspace:
-	go work init . ./examples/resnet ./examples/roberta-sentiment ./examples/yolov10 ./examples/genai/phi3 ./examples/genai/phi3.5-vision
+	go work init . ./examples/resnet ./examples/roberta-sentiment ./examples/yolov10 ./examples/string-tensor ./examples/metadata ./examples/cancellation ./examples/genai/phi3 ./examples/genai/phi3.5-vision
 
 # Lint all modules in workspace
 lint:

@@ -1,12 +1,15 @@
 # Examples
 
-This directory contains example applications demonstrating the usage of onnxruntime-purego.
+This directory contains example applications demonstrating the usage of onnxer.
 
 ## ONNX Runtime Examples
 
 - [**resnet**](./resnet/): Image classification using ResNet
 - [**roberta-sentiment**](./roberta-sentiment/): Sentiment analysis using RoBERTa
 - [**yolov10**](./yolov10/): Object detection using YOLOv10
+- [**string-tensor**](./string-tensor/): String tensor creation and NLP model input
+- [**metadata**](./metadata/): Model introspection (metadata, input/output shapes and types)
+- [**cancellation**](./cancellation/): Context-based inference cancellation and timeouts
 
 ## ONNX Runtime GenAI Examples
 

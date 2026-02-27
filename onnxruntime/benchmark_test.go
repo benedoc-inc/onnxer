@@ -9,7 +9,7 @@ import (
 func BenchmarkSessionRun(b *testing.B) {
 	runtime, err := NewRuntime(libraryPath, 23)
 	if err != nil {
-		b.Fatalf("Failed to create runtime: %v", err)
+		b.Skipf("Skipping: ONNX Runtime library not available: %v", err)
 	}
 	defer runtime.Close()
 
@@ -51,5 +51,113 @@ func BenchmarkSessionRun(b *testing.B) {
 		for _, output := range outputs {
 			output.Close()
 		}
+	}
+}
+
+func BenchmarkTensorCreation(b *testing.B) {
+	runtime, err := NewRuntime(libraryPath, 23)
+	if err != nil {
+		b.Skipf("Skipping: ONNX Runtime library not available: %v", err)
+	}
+	defer runtime.Close()
+
+	data := make([]float32, 1000)
+	for i := range data {
+		data[i] = float32(i)
+	}
+	shape := []int64{10, 100}
+
+	for b.Loop() {
+		tensor, err := NewTensorValue(runtime, data, shape)
+		if err != nil {
+			b.Fatalf("Failed to create tensor: %v", err)
+		}
+		tensor.Close()
+	}
+}
+
+func BenchmarkTensorCreationLarge(b *testing.B) {
+	runtime, err := NewRuntime(libraryPath, 23)
+	if err != nil {
+		b.Skipf("Skipping: ONNX Runtime library not available: %v", err)
+	}
+	defer runtime.Close()
+
+	data := make([]float32, 224*224*3)
+	for i := range data {
+		data[i] = float32(i)
+	}
+	shape := []int64{1, 3, 224, 224}
+
+	for b.Loop() {
+		tensor, err := NewTensorValue(runtime, data, shape)
+		if err != nil {
+			b.Fatalf("Failed to create tensor: %v", err)
+		}
+		tensor.Close()
+	}
+}
+
+func BenchmarkGetTensorData(b *testing.B) {
+	runtime, err := NewRuntime(libraryPath, 23)
+	if err != nil {
+		b.Skipf("Skipping: ONNX Runtime library not available: %v", err)
+	}
+	defer runtime.Close()
+
+	data := make([]float32, 1000)
+	for i := range data {
+		data[i] = float32(i)
+	}
+
+	tensor, err := NewTensorValue(runtime, data, []int64{10, 100})
+	if err != nil {
+		b.Fatalf("Failed to create tensor: %v", err)
+	}
+	defer tensor.Close()
+
+	for b.Loop() {
+		_, _, err := GetTensorData[float32](tensor)
+		if err != nil {
+			b.Fatalf("Failed to get tensor data: %v", err)
+		}
+	}
+}
+
+func BenchmarkStringTensorCreation(b *testing.B) {
+	runtime, err := NewRuntime(libraryPath, 23)
+	if err != nil {
+		b.Skipf("Skipping: ONNX Runtime library not available: %v", err)
+	}
+	defer runtime.Close()
+
+	data := []string{
+		"The quick brown fox jumps over the lazy dog",
+		"ONNX Runtime is a high-performance inference engine",
+		"Go is a statically typed compiled language",
+		"Machine learning inference at the edge",
+	}
+	shape := []int64{4}
+
+	for b.Loop() {
+		tensor, err := runtime.NewStringTensorValue(data, shape)
+		if err != nil {
+			b.Fatalf("Failed to create string tensor: %v", err)
+		}
+		tensor.Close()
+	}
+}
+
+func BenchmarkFloat16Conversion(b *testing.B) {
+	for b.Loop() {
+		f16 := NewFloat16(3.14)
+		_ = f16.Float32()
+	}
+}
+
+func BenchmarkBFloat16Conversion(b *testing.B) {
+	for b.Loop() {
+		bf16 := NewBFloat16(3.14)
+		_ = bf16.Float32()
 	}
 }

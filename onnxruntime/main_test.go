@@ -29,7 +29,7 @@ func newTestRuntime(t *testing.T) *Runtime {
 	// Use environment variable if set, otherwise let the system search standard paths
 	runtime, err := NewRuntime(libraryPath, 23)
 	if err != nil {
-		t.Fatalf("Failed to create runtime: %v", err)
+		t.Skipf("Skipping: ONNX Runtime library not available: %v", err)
 	}
 	t.Cleanup(func() { runtime.Close() })
 
