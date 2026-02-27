@@ -3,6 +3,7 @@ package onnxruntime
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"unsafe"
 
 	"github.com/benedoc-inc/onnxer/onnxruntime/internal/api"
@@ -33,7 +34,9 @@ func (mi *MemoryInfo) Close() {
 }
 
 // IoBinding enables pre-binding of inputs and outputs for optimized inference.
-// This avoids host↔device copies between repeated runs with the same input/output shapes.
+// This avoids host-device copies between repeated runs with the same input/output shapes.
+//
+// An IoBinding is NOT safe for concurrent use. Close it when done to release resources.
 type IoBinding struct {
 	ptr     api.OrtIoBinding
 	session *Session
@@ -51,10 +54,12 @@ func (s *Session) NewIoBinding() (*IoBinding, error) {
 		return nil, fmt.Errorf("failed to create IO binding: %w", err)
 	}
 
-	return &IoBinding{
+	b := &IoBinding{
 		ptr:     bindingPtr,
 		session: s,
-	}, nil
+	}
+	runtime.AddCleanup(b, func(_ struct{}) { b.Close() }, struct{}{})
+	return b, nil
 }
 
 // BindInput binds an input tensor to the given name.

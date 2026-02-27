@@ -60,6 +60,15 @@ func newTestSession(t *testing.T, runtime *Runtime) *Session {
 	return session
 }
 
+func mustOpenModel(t *testing.T) *os.File {
+	t.Helper()
+	f, err := os.Open(testModelPath())
+	if err != nil {
+		t.Fatalf("Failed to open model file: %v", err)
+	}
+	return f
+}
+
 func TestMain(m *testing.M) {
 	libraryPath = os.Getenv("ONNXRUNTIME_LIB_PATH")
 

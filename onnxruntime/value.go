@@ -20,6 +20,11 @@ type TensorData interface {
 
 // Value represents an ONNX Runtime value, typically a tensor.
 // Values are used as inputs and outputs for model inference.
+//
+// A Value is NOT safe for concurrent use. Do not share across goroutines.
+//
+// While a finalizer is set as a safety net, you should always call Close
+// explicitly (typically via defer) to ensure timely release of native memory.
 type Value struct {
 	ptr     api.OrtValue
 	infoPtr api.OrtTensorTypeAndShapeInfo
@@ -241,6 +246,72 @@ func (r *Runtime) newTensorValue(data unsafe.Pointer, dataLen uintptr, shape []i
 		return nil, fmt.Errorf("failed to create tensor: %w", err)
 	}
 	return r.newValueFromPtr(valuePtr), nil
+}
+
+// GetTensorDataUnsafe extracts tensor data and shape from a Value without copying.
+// The returned slice is backed directly by ONNX Runtime's native memory.
+//
+// WARNING: The returned slice is only valid while the Value is alive. Closing the
+// Value invalidates the slice and any access after that is undefined behavior.
+// Use [GetTensorData] if you need data that outlives the Value.
+func GetTensorDataUnsafe[T TensorData](v *Value) ([]T, []int64, error) {
+	shape, err := v.GetTensorShape()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get shape: %w", err)
+	}
+
+	elemType, err := v.GetTensorElementType()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get element type: %w", err)
+	}
+
+	var zero T
+	var expectedType ONNXTensorElementDataType
+	switch any(zero).(type) {
+	case float32:
+		expectedType = ONNXTensorElementDataTypeFloat
+	case float64:
+		expectedType = ONNXTensorElementDataTypeDouble
+	case int8:
+		expectedType = ONNXTensorElementDataTypeInt8
+	case int16:
+		expectedType = ONNXTensorElementDataTypeInt16
+	case int32:
+		expectedType = ONNXTensorElementDataTypeInt32
+	case int64:
+		expectedType = ONNXTensorElementDataTypeInt64
+	case uint8:
+		expectedType = ONNXTensorElementDataTypeUint8
+	case Float16:
+		expectedType = ONNXTensorElementDataTypeFloat16
+	case BFloat16:
+		expectedType = ONNXTensorElementDataTypeBFloat16
+	case uint16:
+		expectedType = ONNXTensorElementDataTypeUint16
+	case uint32:
+		expectedType = ONNXTensorElementDataTypeUint32
+	case uint64:
+		expectedType = ONNXTensorElementDataTypeUint64
+	case bool:
+		expectedType = ONNXTensorElementDataTypeBool
+	}
+
+	if elemType != expectedType {
+		return nil, nil, fmt.Errorf("element type mismatch: expected %d, got %d", expectedType, elemType)
+	}
+
+	dataPtr, err := v.getTensorMutableData()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get tensor data: %w", err)
+	}
+
+	count, err := v.GetTensorElementCount()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get element count: %w", err)
+	}
+
+	data := unsafe.Slice((*T)(dataPtr), count)
+	return data, shape, nil
 }
 
 // GetTensorData extracts tensor data and shape from a Value.

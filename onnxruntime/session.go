@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	goruntime "runtime"
+	"sync"
 	"unsafe"
 
 	"github.com/benedoc-inc/onnxer/internal/cstrings"
@@ -62,6 +64,10 @@ type SessionOptions struct {
 
 // Session represents an ONNX Runtime inference session that can execute
 // a loaded ONNX model.
+//
+// A Session is NOT safe for concurrent use from multiple goroutines.
+// If you need concurrent inference, create separate Sessions or
+// synchronize access with a sync.Mutex.
 type Session struct {
 	ptr     api.OrtSession
 	runtime *Runtime
@@ -69,6 +75,10 @@ type Session struct {
 	// metadata
 	inputNames  []string
 	outputNames []string
+
+	// cached null-terminated name bytes to avoid per-Run allocations
+	inputNameCStrs  [][]byte
+	outputNameCStrs [][]byte
 }
 
 // NewSession creates a new inference session from a model file.
@@ -102,6 +112,7 @@ func (r *Runtime) NewSession(env *Env, modelPath string, options *SessionOptions
 		ptr:     sessionPtr,
 		runtime: r,
 	}
+	goruntime.AddCleanup(session, func(_ struct{}) { session.Close() }, struct{}{})
 
 	// Initialize metadata cache
 	if err := session.initializeMetadata(); err != nil {
@@ -153,6 +164,7 @@ func (r *Runtime) NewSessionFromReader(env *Env, modelReader io.Reader, options 
 		ptr:     sessionPtr,
 		runtime: r,
 	}
+	goruntime.AddCleanup(session, func(_ struct{}) { session.Close() }, struct{}{})
 
 	// Initialize metadata cache
 	if err := session.initializeMetadata(); err != nil {
@@ -172,12 +184,14 @@ func (s *Session) initializeMetadata() error {
 	}
 
 	s.inputNames = make([]string, inputCount)
+	s.inputNameCStrs = make([][]byte, inputCount)
 	for i := range inputCount {
 		name, err := s.getInputName(i)
 		if err != nil {
 			return fmt.Errorf("failed to get input name at index %d: %w", i, err)
 		}
 		s.inputNames[i] = name
+		s.inputNameCStrs[i] = append([]byte(name), 0)
 	}
 
 	// Get output count and names
@@ -187,12 +201,14 @@ func (s *Session) initializeMetadata() error {
 	}
 
 	s.outputNames = make([]string, outputCount)
+	s.outputNameCStrs = make([][]byte, outputCount)
 	for i := range outputCount {
 		name, err := s.getOutputName(i)
 		if err != nil {
 			return fmt.Errorf("failed to get output name at index %d: %w", i, err)
 		}
 		s.outputNames[i] = name
+		s.outputNameCStrs[i] = append([]byte(name), 0)
 	}
 
 	return nil
@@ -357,9 +373,15 @@ func (s *Session) createRunOptionsForCtx(ctx context.Context) (api.OrtRunOptions
 		return 0, nil, fmt.Errorf("failed to create run options: %w", err)
 	}
 
-	// Watch for context cancellation in a goroutine
+	// Watch for context cancellation in a goroutine.
+	// Use WaitGroup to ensure the goroutine has fully exited before
+	// we release the run options, preventing a race where
+	// RunOptionsSetTerminate is called on freed memory.
+	var wg sync.WaitGroup
 	done := make(chan struct{})
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		select {
 		case <-ctx.Done():
 			s.runtime.apiFuncs.RunOptionsSetTerminate(runOpts)
@@ -369,6 +391,7 @@ func (s *Session) createRunOptionsForCtx(ctx context.Context) (api.OrtRunOptions
 
 	cleanup := func() {
 		close(done)
+		wg.Wait() // ensure goroutine exits before releasing
 		s.runtime.apiFuncs.ReleaseRunOptions(runOpts)
 	}
 
@@ -387,11 +410,15 @@ func (s *Session) run(ctx context.Context, inputNames []string, inputs []*Value,
 	}
 	defer cleanup()
 
-	// Prepare input name pointers
+	// Prepare input name pointers using cached C strings
 	inputNamePtrs := make([]*byte, len(inputNames))
 	for i, name := range inputNames {
-		nameBytes := append([]byte(name), 0)
-		inputNamePtrs[i] = &nameBytes[0]
+		if cstr := s.cachedCStr(name, s.inputNames, s.inputNameCStrs); cstr != nil {
+			inputNamePtrs[i] = cstr
+		} else {
+			nameBytes := append([]byte(name), 0)
+			inputNamePtrs[i] = &nameBytes[0]
+		}
 	}
 
 	// Prepare input value pointers
@@ -402,11 +429,15 @@ func (s *Session) run(ctx context.Context, inputNames []string, inputs []*Value,
 		}
 	}
 
-	// Prepare output name pointers
+	// Prepare output name pointers using cached C strings
 	outputNamePtrs := make([]*byte, len(outputNames))
 	for i, name := range outputNames {
-		nameBytes := append([]byte(name), 0)
-		outputNamePtrs[i] = &nameBytes[0]
+		if cstr := s.cachedCStr(name, s.outputNames, s.outputNameCStrs); cstr != nil {
+			outputNamePtrs[i] = cstr
+		} else {
+			nameBytes := append([]byte(name), 0)
+			outputNamePtrs[i] = &nameBytes[0]
+		}
 	}
 
 	// Prepare output value pointers
@@ -551,6 +582,17 @@ func (r *Runtime) configureExecutionProviders(optsPtr api.OrtSessionOptions, opt
 		}
 	}
 
+	return nil
+}
+
+// cachedCStr returns a pointer to a cached null-terminated C string for the given name,
+// or nil if the name is not in the cache. This avoids per-Run allocations.
+func (s *Session) cachedCStr(name string, names []string, cstrs [][]byte) *byte {
+	for i, n := range names {
+		if n == name {
+			return &cstrs[i][0]
+		}
+	}
 	return nil
 }
 

@@ -9,8 +9,11 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        ort-version: ["1.23.0"]
     env:
-      ONNXRUNTIME_VERSION: "1.23.0"
+      ONNXRUNTIME_VERSION: ${{ matrix.ort-version }}
       ONNXRUNTIME_GENAI_VERSION: "0.11.0"
     steps:
     - uses: actions/checkout@v6
@@ -36,7 +39,7 @@ jobs:
       uses: actions/cache@v4
       with:
         path: lib/libonnxruntime.so*
-        key: onnxruntime-linux-x64-${{ env.ONNXRUNTIME_VERSION }}
+        key: onnxruntime-linux-x64-${{ matrix.ort-version }}
 
     - name: Download ONNX Runtime
       if: steps.cache-onnxruntime.outputs.cache-hit != 'true'
@@ -61,7 +64,22 @@ jobs:
         cp libs/genai/${{ env.ONNXRUNTIME_GENAI_VERSION }}/lib/libonnxruntime-genai.so lib/
         rm -rf libs/genai/${{ env.ONNXRUNTIME_GENAI_VERSION }}
 
-    - name: Test
-      run: go test -v ./...
+    - name: Test with coverage
+      run: go test -v -coverprofile=coverage.out ./...
       env:
         LD_LIBRARY_PATH: ${{ github.workspace }}/lib
+
+    - name: Check coverage
+      run: |
+        total=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
+        echo "Total coverage: ${total}%"
+        echo "## Test Coverage: ${total}%" >> $GITHUB_STEP_SUMMARY
+
+    - name: Build examples
+      run: |
+        for dir in examples/*/; do
+          if [ -f "$dir/go.mod" ]; then
+            echo "Building $dir..."
+            (cd "$dir" && go build ./...)
+          fi
+        done

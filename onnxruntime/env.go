@@ -2,6 +2,7 @@ package onnxruntime
 
 import (
 	"fmt"
+	"runtime"
 
 	"github.com/benedoc-inc/onnxer/onnxruntime/internal/api"
 )
@@ -24,10 +25,12 @@ func (r *Runtime) NewEnv(logID string, logLevel LoggingLevel) (*Env, error) {
 		return nil, fmt.Errorf("failed to create environment: %w", err)
 	}
 
-	return &Env{
+	env := &Env{
 		ptr:     envPtr,
 		runtime: r,
-	}, nil
+	}
+	runtime.AddCleanup(env, func(_ struct{}) { env.Close() }, struct{}{})
+	return env, nil
 }
 
 // Close releases the environment and frees associated resources.

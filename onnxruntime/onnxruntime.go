@@ -2,6 +2,7 @@ package onnxruntime
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/benedoc-inc/onnxer/onnxruntime/internal/api"
 )
@@ -144,6 +145,34 @@ const (
 	// ExecutionModeParallel executes independent operators in parallel.
 	ExecutionModeParallel ExecutionMode = 1
 )
+
+// String returns a human-readable name for the graph optimization level.
+func (g GraphOptimizationLevel) String() string {
+	switch g {
+	case GraphOptimizationDisabled:
+		return "Disabled"
+	case GraphOptimizationBasic:
+		return "Basic"
+	case GraphOptimizationExtended:
+		return "Extended"
+	case GraphOptimizationAll:
+		return "All"
+	default:
+		return fmt.Sprintf("GraphOptimizationLevel(%d)", int32(g))
+	}
+}
+
+// String returns a human-readable name for the execution mode.
+func (e ExecutionMode) String() string {
+	switch e {
+	case ExecutionModeSequential:
+		return "Sequential"
+	case ExecutionModeParallel:
+		return "Parallel"
+	default:
+		return fmt.Sprintf("ExecutionMode(%d)", int32(e))
+	}
+}
 
 // allocatorType represents memory allocator types.
 type allocatorType = api.OrtAllocatorType
