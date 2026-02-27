@@ -12,6 +12,7 @@ This library provides a pure Go interface to ONNX Runtime without requiring cgo,
 - **Multi-version API** — supports ORT 1.23.x and 1.24.x simultaneously.
 - **Generics tensor API** — type-safe `NewTensorValue[T]` / `GetTensorData[T]` with compile-time checks.
 - **Context cancellation** — `context.Context` wired through to ORT RunOptions for real cancellation.
+- **Session pooling** — goroutine-safe `SessionPool` with built-in metrics and observability hooks.
 - **Comprehensive** — string tensors, IO binding, model metadata, type introspection, Float16/BFloat16, sequence/map outputs.
 
 ## Feature Comparison
@@ -26,6 +27,8 @@ This library provides a pure Go interface to ONNX Runtime without requiring cgo,
 | Session options (graph opt, threading, memory) | Yes | Yes |
 | Model metadata | Yes | Yes |
 | Context cancellation (wired to ORT) | Yes | No |
+| Session pooling with metrics | Yes | No |
+| Inference hooks (observability) | Yes | No |
 | IO binding | Yes | Yes |
 | Type introspection | Yes | Yes |
 | Sequence/Map outputs | Yes | Yes |
@@ -101,6 +104,44 @@ func main() {
 	data, shape, _ := ort.GetTensorData[float32](outputs[session.OutputNames()[0]])
 	fmt.Printf("Output shape: %v, data: %v\n", shape, data)
 }
+```
+
+## One-Line Model Loading
+
+For simple use cases, `Model` wraps Runtime + Env + Session into a single object:
+
+```go
+model, _ := ort.LoadModelFromFile("model.onnx", &ort.ModelConfig{
+    SessionOptions: &ort.SessionOptions{
+        IntraOpNumThreads: 4,
+        GraphOptimization: ort.GraphOptimizationAll,
+    },
+})
+defer model.Close()
+
+outputs, _ := model.Run(ctx, map[string]*ort.Value{"input": tensor})
+```
+
+## Session Pooling
+
+`SessionPool` manages multiple sessions for safe concurrent inference from many goroutines:
+
+```go
+pool, _ := ort.NewSessionPool(runtime, env, modelBytes, 8, &ort.PoolConfig{
+    Hooks: []ort.Hook{
+        ort.AfterRunHook(func(info *ort.RunInfo) {
+            log.Printf("inference took %v", info.Duration)
+        }),
+    },
+})
+defer pool.Close()
+
+// Safe to call from many goroutines concurrently:
+outputs, _ := pool.Run(ctx, map[string]*ort.Value{"input": tensor})
+
+// Built-in metrics:
+stats := pool.Stats()
+fmt.Printf("runs=%d avg=%v errors=%d\n", stats.TotalRuns, stats.AvgLatency(), stats.TotalErrors)
 ```
 
 ## Examples
