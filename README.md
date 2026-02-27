@@ -159,6 +159,7 @@ See the [`examples/`](./examples/) directory for complete usage examples:
 - [**yolov10**](./examples/yolov10/) — Object detection
 - [**string-tensor**](./examples/string-tensor/) — String tensor inputs for NLP
 - [**metadata**](./examples/metadata/) — Model introspection
+- [**pool**](./examples/pool/) — Concurrent inference with session pooling, hooks, warm-up
 - [**cancellation**](./examples/cancellation/) — Context-based cancellation
 - [**genai/phi3**](./examples/genai/phi3/) — Text generation with Phi-3
 - [**genai/phi3.5-vision**](./examples/genai/phi3.5-vision/) — Multimodal vision-language

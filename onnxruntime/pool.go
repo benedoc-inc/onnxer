@@ -201,6 +201,63 @@ func (s PoolStats) AvgLatency() time.Duration {
 	return s.TotalLatency / time.Duration(s.TotalRuns)
 }
 
+// Warmup pre-runs inference on every session in the pool to warm JIT caches,
+// trigger graph optimizations, and allocate internal buffers. This reduces
+// latency variance on the first real requests.
+//
+// The inputs map should contain representative data matching your model's
+// input schema. Each session runs inference once and the outputs are discarded.
+func (p *SessionPool) Warmup(ctx context.Context, inputs map[string]*Value) error {
+	if p.closed.Load() {
+		return fmt.Errorf("session pool is closed")
+	}
+
+	size := cap(p.sessions)
+	for i := 0; i < size; i++ {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		outputs, err := p.Run(ctx, inputs)
+		if err != nil {
+			return fmt.Errorf("warmup run %d/%d failed: %w", i+1, size, err)
+		}
+		for _, v := range outputs {
+			v.Close()
+		}
+	}
+
+	return nil
+}
+
+// HealthCheck verifies the pool can execute inference by running a single
+// inference with the provided inputs. Returns nil if healthy.
+//
+// Use this in readiness probes (e.g., Kubernetes /healthz endpoints).
+func (p *SessionPool) HealthCheck(ctx context.Context, inputs map[string]*Value) error {
+	if p.closed.Load() {
+		return fmt.Errorf("session pool is closed")
+	}
+
+	outputs, err := p.Run(ctx, inputs)
+	if err != nil {
+		return fmt.Errorf("health check failed: %w", err)
+	}
+	for _, v := range outputs {
+		v.Close()
+	}
+	return nil
+}
+
+// ResetStats resets all pool usage statistics to zero.
+func (p *SessionPool) ResetStats() {
+	p.totalRuns.Store(0)
+	p.totalErrors.Store(0)
+	p.totalLatency.Store(0)
+}
+
 // Close drains the pool and closes all sessions.
 func (p *SessionPool) Close() {
 	if !p.closed.CompareAndSwap(false, true) {

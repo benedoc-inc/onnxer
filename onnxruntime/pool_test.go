@@ -280,3 +280,80 @@ func TestSessionPoolTimeout(t *testing.T) {
 		v.Close()
 	}
 }
+
+func TestSessionPoolWarmup(t *testing.T) {
+	pool := newTestPool(t, 3)
+
+	tensor, err := NewTensorValue(pool.runtime, []float32{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, []int64{1, 10})
+	if err != nil {
+		t.Fatalf("Failed to create tensor: %v", err)
+	}
+	defer tensor.Close()
+
+	err = pool.Warmup(context.Background(), map[string]*Value{"input": tensor})
+	if err != nil {
+		t.Fatalf("Warmup failed: %v", err)
+	}
+
+	stats := pool.Stats()
+	if stats.TotalRuns != 3 {
+		t.Errorf("Expected 3 warmup runs, got %d", stats.TotalRuns)
+	}
+}
+
+func TestSessionPoolHealthCheck(t *testing.T) {
+	pool := newTestPool(t, 1)
+
+	tensor, err := NewTensorValue(pool.runtime, []float32{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, []int64{1, 10})
+	if err != nil {
+		t.Fatalf("Failed to create tensor: %v", err)
+	}
+	defer tensor.Close()
+
+	err = pool.HealthCheck(context.Background(), map[string]*Value{"input": tensor})
+	if err != nil {
+		t.Fatalf("HealthCheck failed: %v", err)
+	}
+}
+
+func TestSessionPoolHealthCheckClosed(t *testing.T) {
+	pool := newTestPool(t, 1)
+	pool.Close()
+
+	err := pool.HealthCheck(context.Background(), nil)
+	if err == nil {
+		t.Error("Expected error on closed pool health check")
+	}
+}
+
+func TestSessionPoolResetStats(t *testing.T) {
+	pool := newTestPool(t, 1)
+
+	for i := 0; i < 3; i++ {
+		outputs := runPoolInference(t, pool)
+		for _, v := range outputs {
+			v.Close()
+		}
+	}
+
+	if stats := pool.Stats(); stats.TotalRuns != 3 {
+		t.Fatalf("Expected 3 runs before reset, got %d", stats.TotalRuns)
+	}
+
+	pool.ResetStats()
+
+	stats := pool.Stats()
+	if stats.TotalRuns != 0 {
+		t.Errorf("Expected 0 runs after reset, got %d", stats.TotalRuns)
+	}
+}
+
+func TestSessionPoolSlogHook(t *testing.T) {
+	hook := NewSlogHook(nil)
+	pool := newTestPool(t, 1, hook)
+
+	outputs := runPoolInference(t, pool)
+	for _, v := range outputs {
+		v.Close()
+	}
+}
