@@ -5,7 +5,7 @@ import (
 	"unsafe"
 
 	"github.com/ebitengine/purego"
-	"github.com/shota3506/onnxruntime-purego/internal/cstrings"
+	"github.com/benedoc-inc/onnxer/internal/cstrings"
 )
 
 // apiBase is the common structure across all API versions.

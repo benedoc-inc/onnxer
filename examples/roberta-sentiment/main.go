@@ -9,7 +9,7 @@ import (
 	"math"
 	"os"
 
-	ort "github.com/shota3506/onnxruntime-purego/onnxruntime"
+	ort "github.com/benedoc-inc/onnxer/onnxruntime"
 	"github.com/sugarme/tokenizer/pretrained"
 )
 

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"unsafe"
 
-	"github.com/shota3506/onnxruntime-purego/genai/internal/api"
+	"github.com/benedoc-inc/onnxer/genai/internal/api"
 )
 
 // Generator handles token-by-token text generation.

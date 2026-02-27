@@ -16,7 +16,7 @@ import (
 	"strings"
 
 	"github.com/nfnt/resize"
-	ort "github.com/shota3506/onnxruntime-purego/onnxruntime"
+	ort "github.com/benedoc-inc/onnxer/onnxruntime"
 )
 
 var (

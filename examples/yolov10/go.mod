@@ -1,13 +1,13 @@
-module github.com/shota3506/onnxruntime-purego/examples/yolov8
+module github.com/benedoc-inc/onnxer/examples/yolov8
 
 go 1.25
 
-replace github.com/shota3506/onnxruntime-purego => ../..
+replace github.com/benedoc-inc/onnxer => ../..
 
 require (
 	github.com/fogleman/gg v1.3.0
 	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646
-	github.com/shota3506/onnxruntime-purego v0.0.0-00010101000000-000000000000
+	github.com/benedoc-inc/onnxer v0.0.0-00010101000000-000000000000
 )
 
 require (

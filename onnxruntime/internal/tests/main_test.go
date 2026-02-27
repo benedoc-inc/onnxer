@@ -9,7 +9,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/shota3506/onnxruntime-purego/onnxruntime"
+	"github.com/benedoc-inc/onnxer/onnxruntime"
 )
 
 var (

@@ -1,9 +1,9 @@
-module github.com/shota3506/onnxruntime-purego/examples/roberta-sentiment
+module github.com/benedoc-inc/onnxer/examples/roberta-sentiment
 
 go 1.25
 
 require (
-	github.com/shota3506/onnxruntime-purego v0.0.0
+	github.com/benedoc-inc/onnxer v0.0.0
 	github.com/sugarme/tokenizer v0.3.0
 )
 
@@ -19,4 +19,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/shota3506/onnxruntime-purego => ../..
+replace github.com/benedoc-inc/onnxer => ../..

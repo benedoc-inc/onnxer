@@ -82,7 +82,7 @@ clean:
 	go clean -testcache
 
 # Module path for workspace-wide operations
-MODULE_PATH := github.com/shota3506/onnxruntime-purego
+MODULE_PATH := github.com/benedoc-inc/onnxer
 
 # Setup go.work for local development
 setup-workspace:

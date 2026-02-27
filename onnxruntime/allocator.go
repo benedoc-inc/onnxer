@@ -3,7 +3,7 @@ package onnxruntime
 import (
 	"unsafe"
 
-	"github.com/shota3506/onnxruntime-purego/onnxruntime/internal/api"
+	"github.com/benedoc-inc/onnxer/onnxruntime/internal/api"
 )
 
 // allocator represents an ONNX Runtime allocator (internal use only)

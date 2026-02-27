@@ -5,7 +5,7 @@ import (
 	"runtime"
 	"unsafe"
 
-	"github.com/shota3506/onnxruntime-purego/onnxruntime/internal/api"
+	"github.com/benedoc-inc/onnxer/onnxruntime/internal/api"
 )
 
 // TensorData is a type constraint for supported tensor data types.

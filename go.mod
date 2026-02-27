@@ -1,4 +1,4 @@
-module github.com/shota3506/onnxruntime-purego
+module github.com/benedoc-inc/onnxer
 
 go 1.25
 

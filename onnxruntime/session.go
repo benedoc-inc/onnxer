@@ -7,8 +7,8 @@ import (
 	"io"
 	"unsafe"
 
-	"github.com/shota3506/onnxruntime-purego/internal/cstrings"
-	"github.com/shota3506/onnxruntime-purego/onnxruntime/internal/api"
+	"github.com/benedoc-inc/onnxer/internal/cstrings"
+	"github.com/benedoc-inc/onnxer/onnxruntime/internal/api"
 )
 
 // SessionOptions configures options for creating an inference session.

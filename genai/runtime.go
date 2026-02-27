@@ -5,7 +5,7 @@ import (
 	"runtime"
 
 	"github.com/ebitengine/purego"
-	"github.com/shota3506/onnxruntime-purego/genai/internal/api"
+	"github.com/benedoc-inc/onnxer/genai/internal/api"
 )
 
 // getDefaultLibraryName returns the default GenAI library name based on the current platform.

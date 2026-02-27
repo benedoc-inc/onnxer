@@ -7,9 +7,9 @@ import (
 	"unsafe"
 
 	"github.com/ebitengine/purego"
-	"github.com/shota3506/onnxruntime-purego/internal/cstrings"
-	"github.com/shota3506/onnxruntime-purego/onnxruntime/internal/api"
-	v23 "github.com/shota3506/onnxruntime-purego/onnxruntime/internal/api/v23"
+	"github.com/benedoc-inc/onnxer/internal/cstrings"
+	"github.com/benedoc-inc/onnxer/onnxruntime/internal/api"
+	v23 "github.com/benedoc-inc/onnxer/onnxruntime/internal/api/v23"
 )
 
 // supportedAPIVersions lists all API versions supported by this library.

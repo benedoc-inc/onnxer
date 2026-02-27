@@ -3,7 +3,7 @@ package genai
 import (
 	"fmt"
 
-	"github.com/shota3506/onnxruntime-purego/genai/internal/api"
+	"github.com/benedoc-inc/onnxer/genai/internal/api"
 )
 
 // Audios represents loaded audio data for processing.

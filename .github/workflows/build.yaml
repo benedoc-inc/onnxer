@@ -26,7 +26,7 @@ jobs:
       run: make setup-workspace
 
     - name: Build
-      run: go build -v github.com/shota3506/onnxruntime-purego/...
+      run: go build -v github.com/benedoc-inc/onnxer/...
 
     - name: Lint
       run: make lint

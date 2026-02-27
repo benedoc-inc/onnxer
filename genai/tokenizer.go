@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"unsafe"
 
-	"github.com/shota3506/onnxruntime-purego/genai/internal/api"
-	"github.com/shota3506/onnxruntime-purego/internal/cstrings"
+	"github.com/benedoc-inc/onnxer/genai/internal/api"
+	"github.com/benedoc-inc/onnxer/internal/cstrings"
 )
 
 // Tokenizer handles text tokenization and detokenization.

@@ -5,7 +5,7 @@ import (
 	"unsafe"
 
 	"github.com/ebitengine/purego"
-	"github.com/shota3506/onnxruntime-purego/onnxruntime/internal/api"
+	"github.com/benedoc-inc/onnxer/onnxruntime/internal/api"
 )
 
 // Funcs contains cached function pointers to ONNX Runtime C API functions.

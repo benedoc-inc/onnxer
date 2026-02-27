@@ -1,11 +1,11 @@
-# onnxruntime-purego
-[![Go Reference](https://pkg.go.dev/badge/github.com/shota3506/onnxruntime-purego.svg)](https://pkg.go.dev/github.com/shota3506/onnxruntime-purego)
+# onnxer
+[![Go Reference](https://pkg.go.dev/badge/github.com/benedoc-inc/onnxer.svg)](https://pkg.go.dev/github.com/benedoc-inc/onnxer)
 
 Pure Go bindings for [ONNX Runtime](https://github.com/microsoft/onnxruntime) using [ebitengine/purego](https://github.com/ebitengine/purego).
 
 This library provides a pure Go interface to ONNX Runtime without requiring cgo, enabling cross-platform machine learning inference in Go applications.
 
-NOTE: This project is currently unstable. APIs may change without notice.
+Forked from [shota3506/onnxruntime-purego](https://github.com/shota3506/onnxruntime-purego).
 
 ## Supported Versions
 
@@ -39,7 +39,7 @@ Alternatively, you can specify a custom path when creating the runtime.
 ## Installation
 
 ```bash
-go get github.com/shota3506/onnxruntime-purego
+go get github.com/benedoc-inc/onnxer
 ```
 
 ## Examples

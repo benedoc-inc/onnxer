@@ -8,7 +8,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/shota3506/onnxruntime-purego/genai"
+	"github.com/benedoc-inc/onnxer/genai"
 )
 
 var (

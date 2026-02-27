@@ -3,8 +3,8 @@ package genai
 import (
 	"fmt"
 
-	"github.com/shota3506/onnxruntime-purego/genai/internal/api"
-	"github.com/shota3506/onnxruntime-purego/internal/cstrings"
+	"github.com/benedoc-inc/onnxer/genai/internal/api"
+	"github.com/benedoc-inc/onnxer/internal/cstrings"
 )
 
 // resultError checks if an OgaResult indicates an error and returns a formatted error.

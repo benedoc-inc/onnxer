@@ -3,7 +3,7 @@ package genai
 import (
 	"fmt"
 
-	"github.com/shota3506/onnxruntime-purego/genai/internal/api"
+	"github.com/benedoc-inc/onnxer/genai/internal/api"
 )
 
 // stringArray wraps OgaStringArray for managing arrays of strings.

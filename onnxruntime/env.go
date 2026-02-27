@@ -3,7 +3,7 @@ package onnxruntime
 import (
 	"fmt"
 
-	"github.com/shota3506/onnxruntime-purego/onnxruntime/internal/api"
+	"github.com/benedoc-inc/onnxer/onnxruntime/internal/api"
 )
 
 // Env represents an ONNX Runtime environment that manages global state
