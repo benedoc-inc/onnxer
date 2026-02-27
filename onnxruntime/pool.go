@@ -3,7 +3,6 @@ package onnxruntime
 import (
 	"context"
 	"fmt"
-	"io"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -33,6 +32,10 @@ type SessionPool struct {
 	inputNames  []string
 	outputNames []string
 
+	// prepacked weights shared across all sessions
+	prepackedWeights     *PrepackedWeightsContainer
+	ownsPrepackedWeights bool // true if pool created the container and should close it
+
 	// metrics
 	totalRuns    atomic.Int64
 	totalErrors  atomic.Int64
@@ -46,6 +49,12 @@ type PoolConfig struct {
 
 	// Hooks are called around every Run invocation.
 	Hooks []Hook
+
+	// SharePrepackedWeights enables sharing of pre-packed kernel weights across
+	// all sessions in the pool. This significantly reduces memory usage because
+	// the packed weight buffers are allocated once and shared rather than
+	// duplicated per session. Recommended for pools with 2+ sessions.
+	SharePrepackedWeights bool
 }
 
 // NewSessionPool creates a pool of n sessions from the given model data.
@@ -60,9 +69,11 @@ func NewSessionPool(runtime *Runtime, env *Env, modelData []byte, n int, config 
 
 	var opts *SessionOptions
 	var hooks []Hook
+	var shareWeights bool
 	if config != nil {
 		opts = config.SessionOptions
 		hooks = config.Hooks
+		shareWeights = config.SharePrepackedWeights
 	}
 
 	pool := &SessionPool{
@@ -71,9 +82,17 @@ func NewSessionPool(runtime *Runtime, env *Env, modelData []byte, n int, config 
 		hooks:    hooks,
 	}
 
+	if shareWeights {
+		container, err := runtime.NewPrepackedWeightsContainer()
+		if err != nil {
+			return nil, fmt.Errorf("failed to create prepacked weights container: %w", err)
+		}
+		pool.prepackedWeights = container
+		pool.ownsPrepackedWeights = true
+	}
+
 	for i := 0; i < n; i++ {
-		reader := newBytesReader(modelData)
-		session, err := runtime.NewSessionFromReader(env, reader, opts)
+		session, err := runtime.newSessionFromBytes(env, modelData, opts, pool.prepackedWeights)
 		if err != nil {
 			pool.Close()
 			return nil, fmt.Errorf("failed to create session %d: %w", i, err)
@@ -96,9 +115,11 @@ func NewSessionPoolFromFile(runtime *Runtime, env *Env, modelPath string, n int,
 
 	var opts *SessionOptions
 	var hooks []Hook
+	var shareWeights bool
 	if config != nil {
 		opts = config.SessionOptions
 		hooks = config.Hooks
+		shareWeights = config.SharePrepackedWeights
 	}
 
 	pool := &SessionPool{
@@ -107,8 +128,17 @@ func NewSessionPoolFromFile(runtime *Runtime, env *Env, modelPath string, n int,
 		hooks:    hooks,
 	}
 
+	if shareWeights {
+		container, err := runtime.NewPrepackedWeightsContainer()
+		if err != nil {
+			return nil, fmt.Errorf("failed to create prepacked weights container: %w", err)
+		}
+		pool.prepackedWeights = container
+		pool.ownsPrepackedWeights = true
+	}
+
 	for i := 0; i < n; i++ {
-		session, err := runtime.NewSession(env, modelPath, opts)
+		session, err := runtime.newSessionFromFile(env, modelPath, opts, pool.prepackedWeights)
 		if err != nil {
 			pool.Close()
 			return nil, fmt.Errorf("failed to create session %d: %w", i, err)
@@ -297,6 +327,12 @@ func (p *SessionPool) Close() {
 	for session := range p.sessions {
 		session.Close()
 	}
+
+	// Release shared prepacked weights after all sessions are closed
+	if p.ownsPrepackedWeights && p.prepackedWeights != nil {
+		p.prepackedWeights.Close()
+		p.prepackedWeights = nil
+	}
 }
 
 // InputNames returns the model's input names.
@@ -309,26 +345,6 @@ func (p *SessionPool) InputNames() []string {
 // This is safe to call concurrently — names are cached at pool creation time.
 func (p *SessionPool) OutputNames() []string {
 	return p.outputNames
-}
-
-// bytesReader implements io.Reader over a byte slice.
-// We avoid importing bytes to keep dependencies minimal.
-type bytesReader struct {
-	data []byte
-	pos  int
-}
-
-func newBytesReader(data []byte) io.Reader {
-	return &bytesReader{data: data}
-}
-
-func (r *bytesReader) Read(p []byte) (n int, err error) {
-	if r.pos >= len(r.data) {
-		return 0, io.EOF
-	}
-	n = copy(p, r.data[r.pos:])
-	r.pos += n
-	return n, nil
 }
 
 func keys[V any](m map[string]V) []string {

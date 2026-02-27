@@ -17,8 +17,9 @@ type Funcs struct {
 	releaseStatus   func(api.OrtStatus)
 
 	// Environment
-	createEnv  func(api.OrtLoggingLevel, *byte, *api.OrtEnv) api.OrtStatus
-	releaseEnv func(api.OrtEnv)
+	createEnv                      func(api.OrtLoggingLevel, *byte, *api.OrtEnv) api.OrtStatus
+	createEnvWithGlobalThreadPools func(api.OrtLoggingLevel, *byte, api.OrtThreadingOptions, *api.OrtEnv) api.OrtStatus
+	releaseEnv                     func(api.OrtEnv)
 
 	// Allocator
 	getAllocatorWithDefaultOptions func(*api.OrtAllocator) api.OrtStatus
@@ -47,6 +48,7 @@ type Funcs struct {
 	addSessionConfigEntry                 func(api.OrtSessionOptions, *byte, *byte) api.OrtStatus
 	addFreeDimensionOverrideByName        func(api.OrtSessionOptions, *byte, int64) api.OrtStatus
 	setDeterministicCompute               func(api.OrtSessionOptions, int32) api.OrtStatus
+	disablePerSessionThreads              func(api.OrtSessionOptions) api.OrtStatus
 	enableProfiling                       func(api.OrtSessionOptions, *byte) api.OrtStatus
 	disableProfiling                      func(api.OrtSessionOptions) api.OrtStatus
 	sessionOptionsAppendExecutionProvider func(api.OrtSessionOptions, *byte, **byte, **byte, uintptr) api.OrtStatus
@@ -152,6 +154,19 @@ type Funcs struct {
 	// Execution provider information
 	getAvailableProviders     func(***byte, *int32) api.OrtStatus
 	releaseAvailableProviders func(**byte, int32) api.OrtStatus
+
+	// Prepacked weights
+	createPrepackedWeightsContainer                     func(*api.OrtPrepackedWeightsContainer) api.OrtStatus
+	releasePrepackedWeightsContainer                    func(api.OrtPrepackedWeightsContainer)
+	createSessionWithPrepackedWeightsContainer          func(api.OrtEnv, *byte, api.OrtSessionOptions, api.OrtPrepackedWeightsContainer, *api.OrtSession) api.OrtStatus
+	createSessionFromArrayWithPrepackedWeightsContainer func(api.OrtEnv, unsafe.Pointer, uintptr, api.OrtSessionOptions, api.OrtPrepackedWeightsContainer, *api.OrtSession) api.OrtStatus
+
+	// Threading options
+	createThreadingOptions     func(*api.OrtThreadingOptions) api.OrtStatus
+	releaseThreadingOptions    func(api.OrtThreadingOptions)
+	setGlobalIntraOpNumThreads func(api.OrtThreadingOptions, int32) api.OrtStatus
+	setGlobalInterOpNumThreads func(api.OrtThreadingOptions, int32) api.OrtStatus
+	setGlobalSpinControl       func(api.OrtThreadingOptions, int32) api.OrtStatus
 }
 
 // InitializeFuncs initializes the v24 API function pointers from the library handle.
@@ -185,6 +200,7 @@ func InitializeFuncs(libraryHandle uintptr) (*Funcs, error) {
 	purego.RegisterFunc(&funcs.releaseStatus, api.ReleaseStatus)
 
 	purego.RegisterFunc(&funcs.createEnv, api.CreateEnv)
+	purego.RegisterFunc(&funcs.createEnvWithGlobalThreadPools, api.CreateEnvWithGlobalThreadPools)
 	purego.RegisterFunc(&funcs.releaseEnv, api.ReleaseEnv)
 
 	purego.RegisterFunc(&funcs.enableTelemetryEvents, api.EnableTelemetryEvents)
@@ -210,6 +226,7 @@ func InitializeFuncs(libraryHandle uintptr) (*Funcs, error) {
 	purego.RegisterFunc(&funcs.addSessionConfigEntry, api.AddSessionConfigEntry)
 	purego.RegisterFunc(&funcs.addFreeDimensionOverrideByName, api.AddFreeDimensionOverrideByName)
 	purego.RegisterFunc(&funcs.setDeterministicCompute, api.SetDeterministicCompute)
+	purego.RegisterFunc(&funcs.disablePerSessionThreads, api.DisablePerSessionThreads)
 	purego.RegisterFunc(&funcs.enableProfiling, api.EnableProfiling)
 	purego.RegisterFunc(&funcs.disableProfiling, api.DisableProfiling)
 	purego.RegisterFunc(&funcs.sessionOptionsAppendExecutionProvider, api.SessionOptionsAppendExecutionProvider)
@@ -304,6 +321,17 @@ func InitializeFuncs(libraryHandle uintptr) (*Funcs, error) {
 	purego.RegisterFunc(&funcs.getAvailableProviders, api.GetAvailableProviders)
 	purego.RegisterFunc(&funcs.releaseAvailableProviders, api.ReleaseAvailableProviders)
 
+	purego.RegisterFunc(&funcs.createPrepackedWeightsContainer, api.CreatePrepackedWeightsContainer)
+	purego.RegisterFunc(&funcs.releasePrepackedWeightsContainer, api.ReleasePrepackedWeightsContainer)
+	purego.RegisterFunc(&funcs.createSessionWithPrepackedWeightsContainer, api.CreateSessionWithPrepackedWeightsContainer)
+	purego.RegisterFunc(&funcs.createSessionFromArrayWithPrepackedWeightsContainer, api.CreateSessionFromArrayWithPrepackedWeightsContainer)
+
+	purego.RegisterFunc(&funcs.createThreadingOptions, api.CreateThreadingOptions)
+	purego.RegisterFunc(&funcs.releaseThreadingOptions, api.ReleaseThreadingOptions)
+	purego.RegisterFunc(&funcs.setGlobalIntraOpNumThreads, api.SetGlobalIntraOpNumThreads)
+	purego.RegisterFunc(&funcs.setGlobalInterOpNumThreads, api.SetGlobalInterOpNumThreads)
+	purego.RegisterFunc(&funcs.setGlobalSpinControl, api.SetGlobalSpinControl)
+
 	return funcs, nil
 }
 
@@ -329,6 +357,10 @@ func (f *Funcs) ReleaseStatus(status api.OrtStatus) {
 
 func (f *Funcs) CreateEnv(logLevel api.OrtLoggingLevel, logID *byte, env *api.OrtEnv) api.OrtStatus {
 	return f.createEnv(logLevel, logID, env)
+}
+
+func (f *Funcs) CreateEnvWithGlobalThreadPools(logLevel api.OrtLoggingLevel, logID *byte, threadingOptions api.OrtThreadingOptions, env *api.OrtEnv) api.OrtStatus {
+	return f.createEnvWithGlobalThreadPools(logLevel, logID, threadingOptions, env)
 }
 
 func (f *Funcs) ReleaseEnv(env api.OrtEnv) {
@@ -421,6 +453,10 @@ func (f *Funcs) AddFreeDimensionOverrideByName(options api.OrtSessionOptions, di
 
 func (f *Funcs) SetDeterministicCompute(options api.OrtSessionOptions, value int32) api.OrtStatus {
 	return f.setDeterministicCompute(options, value)
+}
+
+func (f *Funcs) DisablePerSessionThreads(options api.OrtSessionOptions) api.OrtStatus {
+	return f.disablePerSessionThreads(options)
 }
 
 func (f *Funcs) EnableProfiling(options api.OrtSessionOptions, path *byte) api.OrtStatus {
@@ -769,4 +805,44 @@ func (f *Funcs) GetAvailableProviders(providers ***byte, length *int32) api.OrtS
 
 func (f *Funcs) ReleaseAvailableProviders(providers **byte, length int32) api.OrtStatus {
 	return f.releaseAvailableProviders(providers, length)
+}
+
+// Prepacked weights methods
+
+func (f *Funcs) CreatePrepackedWeightsContainer(container *api.OrtPrepackedWeightsContainer) api.OrtStatus {
+	return f.createPrepackedWeightsContainer(container)
+}
+
+func (f *Funcs) ReleasePrepackedWeightsContainer(container api.OrtPrepackedWeightsContainer) {
+	f.releasePrepackedWeightsContainer(container)
+}
+
+func (f *Funcs) CreateSessionWithPrepackedWeightsContainer(env api.OrtEnv, modelPath *byte, options api.OrtSessionOptions, prepackedWeightsContainer api.OrtPrepackedWeightsContainer, session *api.OrtSession) api.OrtStatus {
+	return f.createSessionWithPrepackedWeightsContainer(env, modelPath, options, prepackedWeightsContainer, session)
+}
+
+func (f *Funcs) CreateSessionFromArrayWithPrepackedWeightsContainer(env api.OrtEnv, modelData unsafe.Pointer, modelDataLength uintptr, options api.OrtSessionOptions, prepackedWeightsContainer api.OrtPrepackedWeightsContainer, session *api.OrtSession) api.OrtStatus {
+	return f.createSessionFromArrayWithPrepackedWeightsContainer(env, modelData, modelDataLength, options, prepackedWeightsContainer, session)
+}
+
+// Threading options methods
+
+func (f *Funcs) CreateThreadingOptions(options *api.OrtThreadingOptions) api.OrtStatus {
+	return f.createThreadingOptions(options)
+}
+
+func (f *Funcs) ReleaseThreadingOptions(options api.OrtThreadingOptions) {
+	f.releaseThreadingOptions(options)
+}
+
+func (f *Funcs) SetGlobalIntraOpNumThreads(options api.OrtThreadingOptions, numThreads int32) api.OrtStatus {
+	return f.setGlobalIntraOpNumThreads(options, numThreads)
+}
+
+func (f *Funcs) SetGlobalInterOpNumThreads(options api.OrtThreadingOptions, numThreads int32) api.OrtStatus {
+	return f.setGlobalInterOpNumThreads(options, numThreads)
+}
+
+func (f *Funcs) SetGlobalSpinControl(options api.OrtThreadingOptions, allowSpinning int32) api.OrtStatus {
+	return f.setGlobalSpinControl(options, allowSpinning)
 }

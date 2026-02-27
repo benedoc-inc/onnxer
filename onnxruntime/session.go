@@ -79,6 +79,11 @@ type SessionOptions struct {
 	// This allows subsequent sessions to load the optimized model directly,
 	// avoiding re-optimization and reducing session creation time.
 	OptimizedModelFilePath string
+
+	// DisablePerSessionThreads prevents the session from creating its own thread pools.
+	// Set to true when using an Env created with NewEnvWithGlobalThreadPools
+	// so sessions use the shared global thread pool instead.
+	DisablePerSessionThreads bool
 }
 
 // Session represents an ONNX Runtime inference session that can execute
@@ -102,90 +107,110 @@ type Session struct {
 
 // NewSession creates a new inference session from a model file.
 func (r *Runtime) NewSession(env *Env, modelPath string, options *SessionOptions) (*Session, error) {
-	var optsPtr api.OrtSessionOptions
-	if options != nil {
-		status := r.apiFuncs.CreateSessionOptions(&optsPtr)
-		if err := r.statusError(status); err != nil {
-			return nil, fmt.Errorf("failed to create session options: %w", err)
-		}
-		defer func() {
-			if optsPtr != 0 {
-				r.apiFuncs.ReleaseSessionOptions(optsPtr)
-			}
-		}()
-
-		if err := r.configureSessionOptions(optsPtr, options); err != nil {
-			return nil, err
-		}
-	}
-
-	modelPathBytes := append([]byte(modelPath), 0)
-	var sessionPtr api.OrtSession
-
-	status := r.apiFuncs.CreateSession(env.ptr, &modelPathBytes[0], api.OrtSessionOptions(optsPtr), &sessionPtr)
-	if err := r.statusError(status); err != nil {
-		return nil, fmt.Errorf("failed to create session: %w", err)
-	}
-
-	session := &Session{
-		ptr:     sessionPtr,
-		runtime: r,
-	}
-	goruntime.AddCleanup(session, func(_ struct{}) { session.Close() }, struct{}{})
-
-	// Initialize metadata cache
-	if err := session.initializeMetadata(); err != nil {
-		session.Close()
-		return nil, fmt.Errorf("failed to initialize session metadata: %w", err)
-	}
-
-	return session, nil
+	return r.newSessionFromFile(env, modelPath, options, nil)
 }
 
 // NewSessionFromReader creates a new inference session from a model loaded from modelReader.
 // The modelReader contains the ONNX model data, and options configures session-specific settings (may be nil for defaults).
 func (r *Runtime) NewSessionFromReader(env *Env, modelReader io.Reader, options *SessionOptions) (*Session, error) {
-	// Read all data from the reader
 	modelData, err := io.ReadAll(modelReader)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read model data: %w", err)
 	}
+	return r.newSessionFromBytes(env, modelData, options, nil)
+}
 
-	if len(modelData) == 0 {
-		return nil, fmt.Errorf("model data cannot be empty")
+// newSessionFromFile creates a session from a file path with optional prepacked weights sharing.
+func (r *Runtime) newSessionFromFile(env *Env, modelPath string, options *SessionOptions, prepackedWeights *PrepackedWeightsContainer) (*Session, error) {
+	optsPtr, cleanupOpts, err := r.createAndConfigureSessionOptions(options)
+	if err != nil {
+		return nil, err
 	}
+	defer cleanupOpts()
 
-	var optsPtr api.OrtSessionOptions
-	if options != nil {
-		status := r.apiFuncs.CreateSessionOptions(&optsPtr)
-		if err := r.statusError(status); err != nil {
-			return nil, fmt.Errorf("failed to create session options: %w", err)
-		}
-		defer func() {
-			if optsPtr != 0 {
-				r.apiFuncs.ReleaseSessionOptions(optsPtr)
-			}
-		}()
-
-		if err := r.configureSessionOptions(optsPtr, options); err != nil {
-			return nil, err
-		}
-	}
-
+	modelPathBytes := append([]byte(modelPath), 0)
 	var sessionPtr api.OrtSession
+	var status api.OrtStatus
 
-	status := r.apiFuncs.CreateSessionFromArray(env.ptr, unsafe.Pointer(&modelData[0]), uintptr(len(modelData)), api.OrtSessionOptions(optsPtr), &sessionPtr)
+	if prepackedWeights != nil && prepackedWeights.ptr != 0 {
+		status = r.apiFuncs.CreateSessionWithPrepackedWeightsContainer(
+			env.ptr, &modelPathBytes[0], optsPtr, prepackedWeights.ptr, &sessionPtr)
+	} else {
+		status = r.apiFuncs.CreateSession(env.ptr, &modelPathBytes[0], optsPtr, &sessionPtr)
+	}
 	if err := r.statusError(status); err != nil {
 		return nil, fmt.Errorf("failed to create session: %w", err)
 	}
 
+	return r.finalizeSession(sessionPtr)
+}
+
+// newSessionFromBytes creates a session from in-memory model data with optional prepacked weights sharing.
+func (r *Runtime) newSessionFromBytes(env *Env, modelData []byte, options *SessionOptions, prepackedWeights *PrepackedWeightsContainer) (*Session, error) {
+	if len(modelData) == 0 {
+		return nil, fmt.Errorf("model data cannot be empty")
+	}
+
+	optsPtr, cleanupOpts, err := r.createAndConfigureSessionOptions(options)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanupOpts()
+
+	var sessionPtr api.OrtSession
+	var status api.OrtStatus
+
+	if prepackedWeights != nil && prepackedWeights.ptr != 0 {
+		status = r.apiFuncs.CreateSessionFromArrayWithPrepackedWeightsContainer(
+			env.ptr, unsafe.Pointer(&modelData[0]), uintptr(len(modelData)),
+			optsPtr, prepackedWeights.ptr, &sessionPtr)
+	} else {
+		status = r.apiFuncs.CreateSessionFromArray(
+			env.ptr, unsafe.Pointer(&modelData[0]), uintptr(len(modelData)),
+			optsPtr, &sessionPtr)
+	}
+	if err := r.statusError(status); err != nil {
+		return nil, fmt.Errorf("failed to create session: %w", err)
+	}
+
+	return r.finalizeSession(sessionPtr)
+}
+
+// createAndConfigureSessionOptions creates and configures ORT session options.
+// Returns the options pointer, a cleanup function, and any error.
+func (r *Runtime) createAndConfigureSessionOptions(options *SessionOptions) (api.OrtSessionOptions, func(), error) {
+	if options == nil {
+		return 0, func() {}, nil
+	}
+
+	var optsPtr api.OrtSessionOptions
+	status := r.apiFuncs.CreateSessionOptions(&optsPtr)
+	if err := r.statusError(status); err != nil {
+		return 0, nil, fmt.Errorf("failed to create session options: %w", err)
+	}
+
+	cleanup := func() {
+		if optsPtr != 0 {
+			r.apiFuncs.ReleaseSessionOptions(optsPtr)
+		}
+	}
+
+	if err := r.configureSessionOptions(optsPtr, options); err != nil {
+		cleanup()
+		return 0, nil, err
+	}
+
+	return optsPtr, cleanup, nil
+}
+
+// finalizeSession wraps a raw session pointer and initializes its metadata.
+func (r *Runtime) finalizeSession(sessionPtr api.OrtSession) (*Session, error) {
 	session := &Session{
 		ptr:     sessionPtr,
 		runtime: r,
 	}
 	goruntime.AddCleanup(session, func(_ struct{}) { session.Close() }, struct{}{})
 
-	// Initialize metadata cache
 	if err := session.initializeMetadata(); err != nil {
 		session.Close()
 		return nil, fmt.Errorf("failed to initialize session metadata: %w", err)
@@ -625,6 +650,13 @@ func (r *Runtime) configureSessionOptions(optsPtr api.OrtSessionOptions, options
 		status := r.apiFuncs.SetOptimizedModelFilePath(optsPtr, &pathBytes[0])
 		if err := r.statusError(status); err != nil {
 			return fmt.Errorf("failed to set optimized model file path: %w", err)
+		}
+	}
+
+	if options.DisablePerSessionThreads {
+		status := r.apiFuncs.DisablePerSessionThreads(optsPtr)
+		if err := r.statusError(status); err != nil {
+			return fmt.Errorf("failed to disable per-session threads: %w", err)
 		}
 	}
 

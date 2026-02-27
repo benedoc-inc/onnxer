@@ -47,6 +47,12 @@ type OrtSequenceTypeInfo uintptr
 // OrtLoraAdapter is an opaque pointer to an ONNX Runtime LoRA adapter.
 type OrtLoraAdapter uintptr
 
+// OrtPrepackedWeightsContainer is an opaque pointer to a prepacked weights container.
+type OrtPrepackedWeightsContainer uintptr
+
+// OrtThreadingOptions is an opaque pointer to ONNX Runtime threading options.
+type OrtThreadingOptions uintptr
+
 // OrtErrorCode represents error codes returned by the ONNX Runtime C API.
 type OrtErrorCode int32
 
@@ -75,6 +81,7 @@ type APIFuncs interface {
 
 	// Environment
 	CreateEnv(OrtLoggingLevel, *byte, *OrtEnv) OrtStatus
+	CreateEnvWithGlobalThreadPools(OrtLoggingLevel, *byte, OrtThreadingOptions, *OrtEnv) OrtStatus
 	ReleaseEnv(OrtEnv)
 
 	// Allocator
@@ -104,6 +111,7 @@ type APIFuncs interface {
 	AddSessionConfigEntry(OrtSessionOptions, *byte, *byte) OrtStatus
 	AddFreeDimensionOverrideByName(OrtSessionOptions, *byte, int64) OrtStatus
 	SetDeterministicCompute(OrtSessionOptions, int32) OrtStatus
+	DisablePerSessionThreads(OrtSessionOptions) OrtStatus
 	EnableProfiling(OrtSessionOptions, *byte) OrtStatus
 	DisableProfiling(OrtSessionOptions) OrtStatus
 	SessionOptionsAppendExecutionProvider(OrtSessionOptions, *byte, **byte, **byte, uintptr) OrtStatus
@@ -209,4 +217,17 @@ type APIFuncs interface {
 	// Execution provider information
 	GetAvailableProviders(***byte, *int32) OrtStatus
 	ReleaseAvailableProviders(**byte, int32) OrtStatus
+
+	// Prepacked weights
+	CreatePrepackedWeightsContainer(*OrtPrepackedWeightsContainer) OrtStatus
+	ReleasePrepackedWeightsContainer(OrtPrepackedWeightsContainer)
+	CreateSessionWithPrepackedWeightsContainer(OrtEnv, *byte, OrtSessionOptions, OrtPrepackedWeightsContainer, *OrtSession) OrtStatus
+	CreateSessionFromArrayWithPrepackedWeightsContainer(OrtEnv, unsafe.Pointer, uintptr, OrtSessionOptions, OrtPrepackedWeightsContainer, *OrtSession) OrtStatus
+
+	// Threading options
+	CreateThreadingOptions(*OrtThreadingOptions) OrtStatus
+	ReleaseThreadingOptions(OrtThreadingOptions)
+	SetGlobalIntraOpNumThreads(OrtThreadingOptions, int32) OrtStatus
+	SetGlobalInterOpNumThreads(OrtThreadingOptions, int32) OrtStatus
+	SetGlobalSpinControl(OrtThreadingOptions, int32) OrtStatus
 }

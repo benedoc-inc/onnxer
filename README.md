@@ -44,6 +44,8 @@ This library provides a pure Go interface to ONNX Runtime without requiring cgo,
 | Deterministic compute mode | Yes | No |
 | Run tagging (log correlation) | Yes | No |
 | IO binding synchronization | Yes | No |
+| Prepacked weights sharing (pool) | Yes | No |
+| Global thread pools | Yes | No |
 | Race-tested concurrent pool | Yes | No |
 
 ## Supported Versions
@@ -169,6 +171,7 @@ See the [`examples/`](./examples/) directory for complete usage examples:
 - [**profiling**](./examples/profiling/) — Per-operator profiling and latency analysis
 - [**lora**](./examples/lora/) — LoRA adapter hot-swap for fine-tuned models
 - [**io-binding**](./examples/io-binding/) — IO binding for optimized repeated inference
+- [**global-threads**](./examples/global-threads/) — Global thread pools with prepacked weights
 - [**cancellation**](./examples/cancellation/) — Context-based cancellation
 - [**genai/phi3**](./examples/genai/phi3/) — Text generation with Phi-3
 - [**genai/phi3.5-vision**](./examples/genai/phi3.5-vision/) — Multimodal vision-language
