@@ -28,8 +28,13 @@ type Funcs struct {
 	createCpuMemoryInfo func(api.OrtAllocatorType, api.OrtMemType, *api.OrtMemoryInfo) api.OrtStatus
 	releaseMemoryInfo   func(api.OrtMemoryInfo)
 
+	// Telemetry
+	enableTelemetryEvents  func(api.OrtEnv) api.OrtStatus
+	disableTelemetryEvents func(api.OrtEnv) api.OrtStatus
+
 	// Session options
 	createSessionOptions                  func(*api.OrtSessionOptions) api.OrtStatus
+	setOptimizedModelFilePath             func(api.OrtSessionOptions, *byte) api.OrtStatus
 	setIntraOpNumThreads                  func(api.OrtSessionOptions, int32) api.OrtStatus
 	setInterOpNumThreads                  func(api.OrtSessionOptions, int32) api.OrtStatus
 	setSessionExecutionMode               func(api.OrtSessionOptions, int32) api.OrtStatus
@@ -40,14 +45,18 @@ type Funcs struct {
 	disableMemPattern                     func(api.OrtSessionOptions) api.OrtStatus
 	setSessionLogSeverityLevel            func(api.OrtSessionOptions, int32) api.OrtStatus
 	addSessionConfigEntry                 func(api.OrtSessionOptions, *byte, *byte) api.OrtStatus
+	enableProfiling                       func(api.OrtSessionOptions, *byte) api.OrtStatus
+	disableProfiling                      func(api.OrtSessionOptions) api.OrtStatus
 	sessionOptionsAppendExecutionProvider func(api.OrtSessionOptions, *byte, **byte, **byte, uintptr) api.OrtStatus
 	releaseSessionOptions                 func(api.OrtSessionOptions)
 
 	// Run options
-	createRunOptions         func(*api.OrtRunOptions) api.OrtStatus
-	releaseRunOptions        func(api.OrtRunOptions)
-	runOptionsSetTerminate   func(api.OrtRunOptions) api.OrtStatus
-	runOptionsUnsetTerminate func(api.OrtRunOptions) api.OrtStatus
+	createRunOptions               func(*api.OrtRunOptions) api.OrtStatus
+	releaseRunOptions              func(api.OrtRunOptions)
+	runOptionsSetTerminate         func(api.OrtRunOptions) api.OrtStatus
+	runOptionsUnsetTerminate       func(api.OrtRunOptions) api.OrtStatus
+	addRunConfigEntry              func(api.OrtRunOptions, *byte, *byte) api.OrtStatus
+	runOptionsAddActiveLoraAdapter func(api.OrtRunOptions, api.OrtLoraAdapter) api.OrtStatus
 
 	// Session
 	createSession          func(api.OrtEnv, *byte, api.OrtSessionOptions, *api.OrtSession) api.OrtStatus
@@ -58,6 +67,18 @@ type Funcs struct {
 	sessionGetOutputName   func(api.OrtSession, uintptr, api.OrtAllocator, **byte) api.OrtStatus
 	run                    func(api.OrtSession, api.OrtRunOptions, **byte, *api.OrtValue, uintptr, **byte, uintptr, *api.OrtValue) api.OrtStatus
 	releaseSession         func(api.OrtSession)
+
+	// Profiling
+	sessionEndProfiling            func(api.OrtSession, api.OrtAllocator, **byte) api.OrtStatus
+	sessionGetProfilingStartTimeNs func(api.OrtSession, *uint64) api.OrtStatus
+
+	// LoRA adapters
+	createLoraAdapter          func(*byte, api.OrtAllocator, *api.OrtLoraAdapter) api.OrtStatus
+	createLoraAdapterFromArray func(unsafe.Pointer, uintptr, api.OrtAllocator, *api.OrtLoraAdapter) api.OrtStatus
+	releaseLoraAdapter         func(api.OrtLoraAdapter)
+
+	// Build info
+	getBuildInfoString func() unsafe.Pointer
 
 	// Model metadata
 	sessionGetModelMetadata               func(api.OrtSession, *api.OrtModelMetadata) api.OrtStatus
@@ -160,6 +181,9 @@ func InitializeFuncs(libraryHandle uintptr) (*Funcs, error) {
 	purego.RegisterFunc(&funcs.createEnv, api.CreateEnv)
 	purego.RegisterFunc(&funcs.releaseEnv, api.ReleaseEnv)
 
+	purego.RegisterFunc(&funcs.enableTelemetryEvents, api.EnableTelemetryEvents)
+	purego.RegisterFunc(&funcs.disableTelemetryEvents, api.DisableTelemetryEvents)
+
 	purego.RegisterFunc(&funcs.getAllocatorWithDefaultOptions, api.GetAllocatorWithDefaultOptions)
 	purego.RegisterFunc(&funcs.allocatorFree, api.AllocatorFree)
 
@@ -167,6 +191,7 @@ func InitializeFuncs(libraryHandle uintptr) (*Funcs, error) {
 	purego.RegisterFunc(&funcs.releaseMemoryInfo, api.ReleaseMemoryInfo)
 
 	purego.RegisterFunc(&funcs.createSessionOptions, api.CreateSessionOptions)
+	purego.RegisterFunc(&funcs.setOptimizedModelFilePath, api.SetOptimizedModelFilePath)
 	purego.RegisterFunc(&funcs.setIntraOpNumThreads, api.SetIntraOpNumThreads)
 	purego.RegisterFunc(&funcs.setInterOpNumThreads, api.SetInterOpNumThreads)
 	purego.RegisterFunc(&funcs.setSessionExecutionMode, api.SetSessionExecutionMode)
@@ -177,6 +202,8 @@ func InitializeFuncs(libraryHandle uintptr) (*Funcs, error) {
 	purego.RegisterFunc(&funcs.disableMemPattern, api.DisableMemPattern)
 	purego.RegisterFunc(&funcs.setSessionLogSeverityLevel, api.SetSessionLogSeverityLevel)
 	purego.RegisterFunc(&funcs.addSessionConfigEntry, api.AddSessionConfigEntry)
+	purego.RegisterFunc(&funcs.enableProfiling, api.EnableProfiling)
+	purego.RegisterFunc(&funcs.disableProfiling, api.DisableProfiling)
 	purego.RegisterFunc(&funcs.sessionOptionsAppendExecutionProvider, api.SessionOptionsAppendExecutionProvider)
 	purego.RegisterFunc(&funcs.releaseSessionOptions, api.ReleaseSessionOptions)
 
@@ -184,6 +211,8 @@ func InitializeFuncs(libraryHandle uintptr) (*Funcs, error) {
 	purego.RegisterFunc(&funcs.releaseRunOptions, api.ReleaseRunOptions)
 	purego.RegisterFunc(&funcs.runOptionsSetTerminate, api.RunOptionsSetTerminate)
 	purego.RegisterFunc(&funcs.runOptionsUnsetTerminate, api.RunOptionsUnsetTerminate)
+	purego.RegisterFunc(&funcs.addRunConfigEntry, api.AddRunConfigEntry)
+	purego.RegisterFunc(&funcs.runOptionsAddActiveLoraAdapter, api.RunOptionsAddActiveLoraAdapter)
 
 	purego.RegisterFunc(&funcs.createSession, api.CreateSession)
 	purego.RegisterFunc(&funcs.createSessionFromArray, api.CreateSessionFromArray)
@@ -193,6 +222,15 @@ func InitializeFuncs(libraryHandle uintptr) (*Funcs, error) {
 	purego.RegisterFunc(&funcs.sessionGetOutputName, api.SessionGetOutputName)
 	purego.RegisterFunc(&funcs.run, api.Run)
 	purego.RegisterFunc(&funcs.releaseSession, api.ReleaseSession)
+
+	purego.RegisterFunc(&funcs.sessionEndProfiling, api.SessionEndProfiling)
+	purego.RegisterFunc(&funcs.sessionGetProfilingStartTimeNs, api.SessionGetProfilingStartTimeNs)
+
+	purego.RegisterFunc(&funcs.createLoraAdapter, api.CreateLoraAdapter)
+	purego.RegisterFunc(&funcs.createLoraAdapterFromArray, api.CreateLoraAdapterFromArray)
+	purego.RegisterFunc(&funcs.releaseLoraAdapter, api.ReleaseLoraAdapter)
+
+	purego.RegisterFunc(&funcs.getBuildInfoString, api.GetBuildInfoString)
 
 	purego.RegisterFunc(&funcs.sessionGetModelMetadata, api.SessionGetModelMetadata)
 	purego.RegisterFunc(&funcs.modelMetadataGetProducerName, api.ModelMetadataGetProducerName)
@@ -284,6 +322,16 @@ func (f *Funcs) ReleaseEnv(env api.OrtEnv) {
 	f.releaseEnv(env)
 }
 
+// Telemetry methods
+
+func (f *Funcs) EnableTelemetryEvents(env api.OrtEnv) api.OrtStatus {
+	return f.enableTelemetryEvents(env)
+}
+
+func (f *Funcs) DisableTelemetryEvents(env api.OrtEnv) api.OrtStatus {
+	return f.disableTelemetryEvents(env)
+}
+
 // Allocator methods
 
 func (f *Funcs) GetAllocatorWithDefaultOptions(allocator *api.OrtAllocator) api.OrtStatus {
@@ -308,6 +356,10 @@ func (f *Funcs) ReleaseMemoryInfo(memInfo api.OrtMemoryInfo) {
 
 func (f *Funcs) CreateSessionOptions(options *api.OrtSessionOptions) api.OrtStatus {
 	return f.createSessionOptions(options)
+}
+
+func (f *Funcs) SetOptimizedModelFilePath(options api.OrtSessionOptions, path *byte) api.OrtStatus {
+	return f.setOptimizedModelFilePath(options, path)
 }
 
 func (f *Funcs) SetIntraOpNumThreads(options api.OrtSessionOptions, numThreads int32) api.OrtStatus {
@@ -350,6 +402,14 @@ func (f *Funcs) AddSessionConfigEntry(options api.OrtSessionOptions, key *byte, 
 	return f.addSessionConfigEntry(options, key, value)
 }
 
+func (f *Funcs) EnableProfiling(options api.OrtSessionOptions, path *byte) api.OrtStatus {
+	return f.enableProfiling(options, path)
+}
+
+func (f *Funcs) DisableProfiling(options api.OrtSessionOptions) api.OrtStatus {
+	return f.disableProfiling(options)
+}
+
 func (f *Funcs) SessionOptionsAppendExecutionProvider(options api.OrtSessionOptions, providerName *byte, keys **byte, values **byte, numKeys uintptr) api.OrtStatus {
 	return f.sessionOptionsAppendExecutionProvider(options, providerName, keys, values, numKeys)
 }
@@ -374,6 +434,14 @@ func (f *Funcs) RunOptionsSetTerminate(options api.OrtRunOptions) api.OrtStatus 
 
 func (f *Funcs) RunOptionsUnsetTerminate(options api.OrtRunOptions) api.OrtStatus {
 	return f.runOptionsUnsetTerminate(options)
+}
+
+func (f *Funcs) AddRunConfigEntry(options api.OrtRunOptions, key *byte, value *byte) api.OrtStatus {
+	return f.addRunConfigEntry(options, key, value)
+}
+
+func (f *Funcs) RunOptionsAddActiveLoraAdapter(options api.OrtRunOptions, adapter api.OrtLoraAdapter) api.OrtStatus {
+	return f.runOptionsAddActiveLoraAdapter(options, adapter)
 }
 
 // Session methods
@@ -408,6 +476,36 @@ func (f *Funcs) Run(session api.OrtSession, runOptions api.OrtRunOptions, inputN
 
 func (f *Funcs) ReleaseSession(session api.OrtSession) {
 	f.releaseSession(session)
+}
+
+// Profiling methods
+
+func (f *Funcs) SessionEndProfiling(session api.OrtSession, allocator api.OrtAllocator, out **byte) api.OrtStatus {
+	return f.sessionEndProfiling(session, allocator, out)
+}
+
+func (f *Funcs) SessionGetProfilingStartTimeNs(session api.OrtSession, out *uint64) api.OrtStatus {
+	return f.sessionGetProfilingStartTimeNs(session, out)
+}
+
+// LoRA adapter methods
+
+func (f *Funcs) CreateLoraAdapter(path *byte, allocator api.OrtAllocator, out *api.OrtLoraAdapter) api.OrtStatus {
+	return f.createLoraAdapter(path, allocator, out)
+}
+
+func (f *Funcs) CreateLoraAdapterFromArray(data unsafe.Pointer, dataLen uintptr, allocator api.OrtAllocator, out *api.OrtLoraAdapter) api.OrtStatus {
+	return f.createLoraAdapterFromArray(data, dataLen, allocator, out)
+}
+
+func (f *Funcs) ReleaseLoraAdapter(adapter api.OrtLoraAdapter) {
+	f.releaseLoraAdapter(adapter)
+}
+
+// Build info methods
+
+func (f *Funcs) GetBuildInfoString() unsafe.Pointer {
+	return f.getBuildInfoString()
 }
 
 // Model metadata methods

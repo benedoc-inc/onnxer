@@ -60,6 +60,16 @@ type SessionOptions struct {
 
 	// ConfigEntries provides arbitrary key-value configuration entries.
 	ConfigEntries map[string]string
+
+	// ProfilingOutputPath enables profiling and sets the output file path prefix.
+	// If non-empty, profiling data will be written when EndProfiling is called.
+	// The actual output file will have a timestamp suffix appended.
+	ProfilingOutputPath string
+
+	// OptimizedModelFilePath saves the graph-optimized model to the given path.
+	// This allows subsequent sessions to load the optimized model directly,
+	// avoiding re-optimization and reducing session creation time.
+	OptimizedModelFilePath string
 }
 
 // Session represents an ONNX Runtime inference session that can execute
@@ -306,7 +316,8 @@ func (s *Session) getOutputName(index int) (string, error) {
 type RunOption func(*runConfig)
 
 type runConfig struct {
-	outputNames []string
+	outputNames  []string
+	loraAdapters []*LoraAdapter
 }
 
 // WithOutputNames specifies which outputs to compute during inference.
@@ -346,7 +357,7 @@ func (s *Session) Run(ctx context.Context, inputs map[string]*Value, opts ...Run
 	}
 
 	// Call the low-level run method
-	outputValues, err := s.run(ctx, inputNames, inputValues, config.outputNames)
+	outputValues, err := s.run(ctx, inputNames, inputValues, config)
 	if err != nil {
 		return nil, err
 	}
@@ -359,11 +370,12 @@ func (s *Session) Run(ctx context.Context, inputs map[string]*Value, opts ...Run
 	return outputs, nil
 }
 
-// createRunOptionsForCtx creates OrtRunOptions for context cancellation support.
+// createRunOptions creates OrtRunOptions with context cancellation and LoRA adapter support.
 // Returns the run options pointer and a cleanup function that must be called.
-func (s *Session) createRunOptionsForCtx(ctx context.Context) (api.OrtRunOptions, func(), error) {
-	if ctx == nil || ctx.Done() == nil {
-		// No cancellation needed — pass zero (NULL)
+func (s *Session) createRunOptions(ctx context.Context, config *runConfig) (api.OrtRunOptions, func(), error) {
+	needsRunOpts := (ctx != nil && ctx.Done() != nil) || len(config.loraAdapters) > 0
+
+	if !needsRunOpts {
 		return 0, func() {}, nil
 	}
 
@@ -373,25 +385,39 @@ func (s *Session) createRunOptionsForCtx(ctx context.Context) (api.OrtRunOptions
 		return 0, nil, fmt.Errorf("failed to create run options: %w", err)
 	}
 
+	// Attach LoRA adapters to run options
+	for _, adapter := range config.loraAdapters {
+		if adapter == nil || adapter.ptr == 0 {
+			continue
+		}
+		status := s.runtime.apiFuncs.RunOptionsAddActiveLoraAdapter(runOpts, adapter.ptr)
+		if err := s.runtime.statusError(status); err != nil {
+			s.runtime.apiFuncs.ReleaseRunOptions(runOpts)
+			return 0, nil, fmt.Errorf("failed to add LoRA adapter to run options: %w", err)
+		}
+	}
+
 	// Watch for context cancellation in a goroutine.
 	// Use WaitGroup to ensure the goroutine has fully exited before
 	// we release the run options, preventing a race where
 	// RunOptionsSetTerminate is called on freed memory.
 	var wg sync.WaitGroup
 	done := make(chan struct{})
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		select {
-		case <-ctx.Done():
-			s.runtime.apiFuncs.RunOptionsSetTerminate(runOpts)
-		case <-done:
-		}
-	}()
+	if ctx != nil && ctx.Done() != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			select {
+			case <-ctx.Done():
+				s.runtime.apiFuncs.RunOptionsSetTerminate(runOpts)
+			case <-done:
+			}
+		}()
+	}
 
 	cleanup := func() {
 		close(done)
-		wg.Wait() // ensure goroutine exits before releasing
+		wg.Wait()
 		s.runtime.apiFuncs.ReleaseRunOptions(runOpts)
 	}
 
@@ -399,12 +425,14 @@ func (s *Session) createRunOptionsForCtx(ctx context.Context) (api.OrtRunOptions
 }
 
 // run executes the model with the provided inputs and returns the computed outputs.
-func (s *Session) run(ctx context.Context, inputNames []string, inputs []*Value, outputNames []string) ([]*Value, error) {
+func (s *Session) run(ctx context.Context, inputNames []string, inputs []*Value, config *runConfig) ([]*Value, error) {
 	if len(inputNames) != len(inputs) {
 		return nil, fmt.Errorf("number of input names (%d) must match number of inputs (%d)", len(inputNames), len(inputs))
 	}
 
-	runOpts, cleanup, err := s.createRunOptionsForCtx(ctx)
+	outputNames := config.outputNames
+
+	runOpts, cleanup, err := s.createRunOptions(ctx, config)
 	if err != nil {
 		return nil, err
 	}
@@ -534,6 +562,22 @@ func (r *Runtime) configureSessionOptions(optsPtr api.OrtSessionOptions, options
 		status := r.apiFuncs.AddSessionConfigEntry(optsPtr, &keyBytes[0], &valBytes[0])
 		if err := r.statusError(status); err != nil {
 			return fmt.Errorf("failed to add session config entry %q: %w", k, err)
+		}
+	}
+
+	if options.ProfilingOutputPath != "" {
+		pathBytes := append([]byte(options.ProfilingOutputPath), 0)
+		status := r.apiFuncs.EnableProfiling(optsPtr, &pathBytes[0])
+		if err := r.statusError(status); err != nil {
+			return fmt.Errorf("failed to enable profiling: %w", err)
+		}
+	}
+
+	if options.OptimizedModelFilePath != "" {
+		pathBytes := append([]byte(options.OptimizedModelFilePath), 0)
+		status := r.apiFuncs.SetOptimizedModelFilePath(optsPtr, &pathBytes[0])
+		if err := r.statusError(status); err != nil {
+			return fmt.Errorf("failed to set optimized model file path: %w", err)
 		}
 	}
 

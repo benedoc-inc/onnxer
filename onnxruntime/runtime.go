@@ -6,11 +6,11 @@ import (
 	"slices"
 	"unsafe"
 
-	"github.com/ebitengine/purego"
 	"github.com/benedoc-inc/onnxer/internal/cstrings"
 	"github.com/benedoc-inc/onnxer/onnxruntime/internal/api"
 	v23 "github.com/benedoc-inc/onnxer/onnxruntime/internal/api/v23"
 	v24 "github.com/benedoc-inc/onnxer/onnxruntime/internal/api/v24"
+	"github.com/ebitengine/purego"
 )
 
 // supportedAPIVersions lists all API versions supported by this library.
@@ -205,6 +205,16 @@ func (r *Runtime) GetAPIVersion() uint32 {
 // GetVersionString returns the version string of the ONNX Runtime library.
 func (r *Runtime) GetVersionString() string {
 	return r.versionString
+}
+
+// GetBuildInfo returns the ONNX Runtime build information string,
+// including compiler version and build configuration.
+func (r *Runtime) GetBuildInfo() string {
+	ptr := r.apiFuncs.GetBuildInfoString()
+	if ptr == nil {
+		return ""
+	}
+	return cstrings.CStringToString((*byte)(ptr))
 }
 
 // statusError converts an OrtStatus to a Go error.

@@ -44,6 +44,9 @@ type OrtMapTypeInfo uintptr
 // OrtSequenceTypeInfo is an opaque pointer to ONNX Runtime sequence type information.
 type OrtSequenceTypeInfo uintptr
 
+// OrtLoraAdapter is an opaque pointer to an ONNX Runtime LoRA adapter.
+type OrtLoraAdapter uintptr
+
 // OrtErrorCode represents error codes returned by the ONNX Runtime C API.
 type OrtErrorCode int32
 
@@ -82,8 +85,13 @@ type APIFuncs interface {
 	CreateCpuMemoryInfo(OrtAllocatorType, OrtMemType, *OrtMemoryInfo) OrtStatus
 	ReleaseMemoryInfo(OrtMemoryInfo)
 
+	// Telemetry
+	EnableTelemetryEvents(OrtEnv) OrtStatus
+	DisableTelemetryEvents(OrtEnv) OrtStatus
+
 	// Session options
 	CreateSessionOptions(*OrtSessionOptions) OrtStatus
+	SetOptimizedModelFilePath(OrtSessionOptions, *byte) OrtStatus
 	SetIntraOpNumThreads(OrtSessionOptions, int32) OrtStatus
 	SetInterOpNumThreads(OrtSessionOptions, int32) OrtStatus
 	SetSessionExecutionMode(OrtSessionOptions, int32) OrtStatus
@@ -94,6 +102,8 @@ type APIFuncs interface {
 	DisableMemPattern(OrtSessionOptions) OrtStatus
 	SetSessionLogSeverityLevel(OrtSessionOptions, int32) OrtStatus
 	AddSessionConfigEntry(OrtSessionOptions, *byte, *byte) OrtStatus
+	EnableProfiling(OrtSessionOptions, *byte) OrtStatus
+	DisableProfiling(OrtSessionOptions) OrtStatus
 	SessionOptionsAppendExecutionProvider(OrtSessionOptions, *byte, **byte, **byte, uintptr) OrtStatus
 	ReleaseSessionOptions(OrtSessionOptions)
 
@@ -102,6 +112,8 @@ type APIFuncs interface {
 	ReleaseRunOptions(OrtRunOptions)
 	RunOptionsSetTerminate(OrtRunOptions) OrtStatus
 	RunOptionsUnsetTerminate(OrtRunOptions) OrtStatus
+	AddRunConfigEntry(OrtRunOptions, *byte, *byte) OrtStatus
+	RunOptionsAddActiveLoraAdapter(OrtRunOptions, OrtLoraAdapter) OrtStatus
 
 	// Session
 	CreateSession(OrtEnv, *byte, OrtSessionOptions, *OrtSession) OrtStatus
@@ -112,6 +124,18 @@ type APIFuncs interface {
 	SessionGetOutputName(OrtSession, uintptr, OrtAllocator, **byte) OrtStatus
 	Run(OrtSession, OrtRunOptions, **byte, *OrtValue, uintptr, **byte, uintptr, *OrtValue) OrtStatus
 	ReleaseSession(OrtSession)
+
+	// Profiling
+	SessionEndProfiling(OrtSession, OrtAllocator, **byte) OrtStatus
+	SessionGetProfilingStartTimeNs(OrtSession, *uint64) OrtStatus
+
+	// LoRA adapters
+	CreateLoraAdapter(*byte, OrtAllocator, *OrtLoraAdapter) OrtStatus
+	CreateLoraAdapterFromArray(unsafe.Pointer, uintptr, OrtAllocator, *OrtLoraAdapter) OrtStatus
+	ReleaseLoraAdapter(OrtLoraAdapter)
+
+	// Build info
+	GetBuildInfoString() unsafe.Pointer
 
 	// Model metadata
 	SessionGetModelMetadata(OrtSession, *OrtModelMetadata) OrtStatus

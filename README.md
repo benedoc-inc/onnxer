@@ -13,6 +13,8 @@ This library provides a pure Go interface to ONNX Runtime without requiring cgo,
 - **Generics tensor API** — type-safe `NewTensorValue[T]` / `GetTensorData[T]` with compile-time checks.
 - **Context cancellation** — `context.Context` wired through to ORT RunOptions for real cancellation.
 - **Session pooling** — goroutine-safe `SessionPool` with built-in metrics and observability hooks.
+- **Profiling** — built-in ORT profiling support for diagnosing per-operator latency.
+- **LoRA adapters** — hot-swap fine-tuned adapters per inference run without reloading the base model.
 - **Comprehensive** — string tensors, IO binding, model metadata, type introspection, Float16/BFloat16, sequence/map outputs.
 
 ## Feature Comparison
@@ -33,6 +35,10 @@ This library provides a pure Go interface to ONNX Runtime without requiring cgo,
 | Type introspection | Yes | Yes |
 | Sequence/Map outputs | Yes | Yes |
 | Float16/BFloat16 | Yes | Yes |
+| Profiling (per-operator timing) | Yes | No |
+| LoRA adapter hot-swap | Yes | No |
+| Optimized model caching | Yes | No |
+| Zero-copy tensor access | Yes | No |
 
 ## Supported Versions
 

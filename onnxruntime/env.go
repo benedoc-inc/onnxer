@@ -33,6 +33,26 @@ func (r *Runtime) NewEnv(logID string, logLevel LoggingLevel) (*Env, error) {
 	return env, nil
 }
 
+// EnableTelemetry enables telemetry event collection for this environment.
+// Telemetry helps the ONNX Runtime team understand usage patterns.
+// It is enabled by default; call DisableTelemetry to opt out.
+func (e *Env) EnableTelemetry() error {
+	status := e.runtime.apiFuncs.EnableTelemetryEvents(e.ptr)
+	if err := e.runtime.statusError(status); err != nil {
+		return fmt.Errorf("failed to enable telemetry: %w", err)
+	}
+	return nil
+}
+
+// DisableTelemetry disables telemetry event collection for this environment.
+func (e *Env) DisableTelemetry() error {
+	status := e.runtime.apiFuncs.DisableTelemetryEvents(e.ptr)
+	if err := e.runtime.statusError(status); err != nil {
+		return fmt.Errorf("failed to disable telemetry: %w", err)
+	}
+	return nil
+}
+
 // Close releases the environment and frees associated resources.
 func (e *Env) Close() {
 	if e.ptr != 0 && e.runtime != nil && e.runtime.apiFuncs != nil {

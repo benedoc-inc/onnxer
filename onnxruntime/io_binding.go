@@ -98,7 +98,7 @@ func (b *IoBinding) BindOutputToDevice(name string, memInfo *MemoryInfo) error {
 func (b *IoBinding) Run(ctx context.Context) error {
 	r := b.session.runtime
 
-	runOptions, cleanup, err := b.session.createRunOptionsForCtx(ctx)
+	runOptions, cleanup, err := b.session.createRunOptions(ctx, &runConfig{})
 	if err != nil {
 		return err
 	}
