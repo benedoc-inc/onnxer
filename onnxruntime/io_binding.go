@@ -132,9 +132,13 @@ func (b *IoBinding) GetOutputValues() (map[string]*Value, error) {
 
 	// Binding order matches session output order
 	values := unsafe.Slice(valuesPtr, valueCount)
+	outputNames := b.session.OutputNames()
+	if int(valueCount) > len(outputNames) {
+		return nil, fmt.Errorf("bound output count (%d) exceeds model output count (%d)", valueCount, len(outputNames))
+	}
 	result := make(map[string]*Value, valueCount)
 	for i := uintptr(0); i < valueCount; i++ {
-		result[b.session.outputNames[i]] = r.newValueFromPtr(values[i])
+		result[outputNames[i]] = r.newValueFromPtr(values[i])
 	}
 
 	return result, nil
@@ -148,6 +152,28 @@ func (b *IoBinding) ClearInputs() {
 // ClearOutputs clears all bound outputs.
 func (b *IoBinding) ClearOutputs() {
 	b.session.runtime.apiFuncs.ClearBoundOutputs(b.ptr)
+}
+
+// SynchronizeInputs ensures all bound input data is available on the target device.
+// Call this after binding inputs and before Run when using GPU execution providers
+// to ensure host-to-device transfers are complete.
+func (b *IoBinding) SynchronizeInputs() error {
+	status := b.session.runtime.apiFuncs.SynchronizeBoundInputs(b.ptr)
+	if err := b.session.runtime.statusError(status); err != nil {
+		return fmt.Errorf("failed to synchronize bound inputs: %w", err)
+	}
+	return nil
+}
+
+// SynchronizeOutputs ensures all bound output data is available on the host.
+// Call this after Run when using GPU execution providers to ensure
+// device-to-host transfers are complete before reading output data.
+func (b *IoBinding) SynchronizeOutputs() error {
+	status := b.session.runtime.apiFuncs.SynchronizeBoundOutputs(b.ptr)
+	if err := b.session.runtime.statusError(status); err != nil {
+		return fmt.Errorf("failed to synchronize bound outputs: %w", err)
+	}
+	return nil
 }
 
 // Close releases the IO binding resources.

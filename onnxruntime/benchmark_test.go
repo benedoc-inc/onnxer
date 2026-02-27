@@ -308,21 +308,13 @@ func BenchmarkConcurrentSessionRun(b *testing.B) {
 		b.Fatalf("Failed to read model: %v", err)
 	}
 
-	// Create one session per goroutine (4 goroutines)
+	// Create one session per goroutine via pool for thread safety
 	const numSessions = 4
-	sessions := make([]*Session, numSessions)
-	for i := range sessions {
-		s, err := runtime.NewSessionFromReader(env, bytes.NewReader(modelData), nil)
-		if err != nil {
-			b.Fatalf("Failed to create session: %v", err)
-		}
-		sessions[i] = s
+	pool, err := NewSessionPool(runtime, env, modelData, numSessions, nil)
+	if err != nil {
+		b.Fatalf("Failed to create pool: %v", err)
 	}
-	defer func() {
-		for _, s := range sessions {
-			s.Close()
-		}
-	}()
+	defer pool.Close()
 
 	b.RunParallel(func(pb *testing.PB) {
 		tensor, err := NewTensorValue(runtime, []float32{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, []int64{1, 10})
@@ -331,13 +323,10 @@ func BenchmarkConcurrentSessionRun(b *testing.B) {
 		}
 		defer tensor.Close()
 
-		// Each goroutine gets its own session (round-robin)
-		session := sessions[0] // simplified: all use different sessions via pool in production
-
 		inputs := map[string]*Value{"input": tensor}
 
 		for pb.Next() {
-			outputs, err := session.Run(context.Background(), inputs)
+			outputs, err := pool.Run(context.Background(), inputs)
 			if err != nil {
 				b.Fatalf("Failed to run: %v", err)
 			}

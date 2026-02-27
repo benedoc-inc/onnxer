@@ -102,6 +102,8 @@ type APIFuncs interface {
 	DisableMemPattern(OrtSessionOptions) OrtStatus
 	SetSessionLogSeverityLevel(OrtSessionOptions, int32) OrtStatus
 	AddSessionConfigEntry(OrtSessionOptions, *byte, *byte) OrtStatus
+	AddFreeDimensionOverrideByName(OrtSessionOptions, *byte, int64) OrtStatus
+	SetDeterministicCompute(OrtSessionOptions, int32) OrtStatus
 	EnableProfiling(OrtSessionOptions, *byte) OrtStatus
 	DisableProfiling(OrtSessionOptions) OrtStatus
 	SessionOptionsAppendExecutionProvider(OrtSessionOptions, *byte, **byte, **byte, uintptr) OrtStatus
@@ -112,6 +114,7 @@ type APIFuncs interface {
 	ReleaseRunOptions(OrtRunOptions)
 	RunOptionsSetTerminate(OrtRunOptions) OrtStatus
 	RunOptionsUnsetTerminate(OrtRunOptions) OrtStatus
+	RunOptionsSetRunTag(OrtRunOptions, *byte) OrtStatus
 	AddRunConfigEntry(OrtRunOptions, *byte, *byte) OrtStatus
 	RunOptionsAddActiveLoraAdapter(OrtRunOptions, OrtLoraAdapter) OrtStatus
 
@@ -153,6 +156,7 @@ type APIFuncs interface {
 	SessionGetOutputTypeInfo(OrtSession, uintptr, *OrtTypeInfo) OrtStatus
 	CastTypeInfoToTensorInfo(OrtTypeInfo, *OrtTensorTypeAndShapeInfo) OrtStatus
 	GetOnnxTypeFromTypeInfo(OrtTypeInfo, *ONNXType) OrtStatus
+	GetSymbolicDimensions(OrtTensorTypeAndShapeInfo, **byte, uintptr) OrtStatus
 	ReleaseTypeInfo(OrtTypeInfo)
 
 	// Tensor/Value operations
@@ -160,6 +164,7 @@ type APIFuncs interface {
 	CreateTensorWithDataAsOrtValue(OrtMemoryInfo, unsafe.Pointer, uintptr, *int64, uintptr, ONNXTensorElementDataType, *OrtValue) OrtStatus
 	IsTensor(OrtValue, *int32) OrtStatus
 	GetValueType(OrtValue, *ONNXType) OrtStatus
+	HasValue(OrtValue, *int32) OrtStatus
 	GetTensorMutableData(OrtValue, *unsafe.Pointer) OrtStatus
 	GetTensorTypeAndShape(OrtValue, *OrtTensorTypeAndShapeInfo) OrtStatus
 	GetTensorElementType(OrtTensorTypeAndShapeInfo, *ONNXTensorElementDataType) OrtStatus
@@ -198,6 +203,8 @@ type APIFuncs interface {
 	ClearBoundInputs(OrtIoBinding)
 	ClearBoundOutputs(OrtIoBinding)
 	RunWithBinding(OrtSession, OrtRunOptions, OrtIoBinding) OrtStatus
+	SynchronizeBoundInputs(OrtIoBinding) OrtStatus
+	SynchronizeBoundOutputs(OrtIoBinding) OrtStatus
 
 	// Execution provider information
 	GetAvailableProviders(***byte, *int32) OrtStatus

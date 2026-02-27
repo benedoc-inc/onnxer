@@ -135,6 +135,68 @@ func TestSessionOptionsCombined(t *testing.T) {
 	runInference(t, runtime, session)
 }
 
+func TestSessionOptionsDeterministicCompute(t *testing.T) {
+	runtime := newTestRuntime(t)
+
+	enabled := true
+	session := newSessionWithOptions(t, runtime, &SessionOptions{
+		DeterministicCompute: &enabled,
+	})
+	runInference(t, runtime, session)
+}
+
+func TestSessionOptionsFreeDimensionOverrides(t *testing.T) {
+	runtime := newTestRuntime(t)
+
+	// Our test model may have dynamic batch dim — try overriding it
+	session := newSessionWithOptions(t, runtime, &SessionOptions{
+		FreeDimensionOverrides: map[string]int64{
+			"batch_size": 1,
+		},
+	})
+	runInference(t, runtime, session)
+}
+
+func TestWithRunTag(t *testing.T) {
+	runtime := newTestRuntime(t)
+	session := newTestSession(t, runtime)
+
+	inputData := []float32{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+	tensor, err := NewTensorValue(runtime, inputData, []int64{1, 10})
+	if err != nil {
+		t.Fatalf("Failed to create tensor: %v", err)
+	}
+	defer tensor.Close()
+
+	outputs, err := session.Run(t.Context(), map[string]*Value{
+		"input": tensor,
+	}, WithRunTag("test-inference-001"))
+	if err != nil {
+		t.Fatalf("Failed to run with run tag: %v", err)
+	}
+	for _, v := range outputs {
+		v.Close()
+	}
+}
+
+func TestHasValue(t *testing.T) {
+	runtime := newTestRuntime(t)
+
+	tensor, err := NewTensorValue(runtime, []float32{1, 2, 3}, []int64{3})
+	if err != nil {
+		t.Fatalf("Failed to create tensor: %v", err)
+	}
+	defer tensor.Close()
+
+	has, err := tensor.HasValue()
+	if err != nil {
+		t.Fatalf("HasValue failed: %v", err)
+	}
+	if !has {
+		t.Error("Expected tensor to have a value")
+	}
+}
+
 // runInference runs a basic inference to verify the session works
 func runInference(t *testing.T, runtime *Runtime, session *Session) {
 	t.Helper()

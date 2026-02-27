@@ -58,6 +58,15 @@ type SessionOptions struct {
 	// nil means use the environment default.
 	LogSeverityLevel *LoggingLevel
 
+	// FreeDimensionOverrides fixes symbolic dimensions by name at session creation time.
+	// Keys are symbolic dimension names (e.g., "batch_size"), values are the fixed sizes.
+	// This improves memory allocation and kernel selection for models with dynamic shapes.
+	FreeDimensionOverrides map[string]int64
+
+	// DeterministicCompute when non-nil enables or disables deterministic computation.
+	// When true, ORT avoids non-deterministic GPU kernels for reproducible results.
+	DeterministicCompute *bool
+
 	// ConfigEntries provides arbitrary key-value configuration entries.
 	ConfigEntries map[string]string
 
@@ -318,6 +327,7 @@ type RunOption func(*runConfig)
 type runConfig struct {
 	outputNames  []string
 	loraAdapters []*LoraAdapter
+	runTag       string
 }
 
 // WithOutputNames specifies which outputs to compute during inference.
@@ -325,6 +335,14 @@ type runConfig struct {
 func WithOutputNames(names ...string) RunOption {
 	return func(c *runConfig) {
 		c.outputNames = names
+	}
+}
+
+// WithRunTag sets a tag on the run for log correlation and debugging.
+// The tag appears in ORT log output to identify specific inference runs.
+func WithRunTag(tag string) RunOption {
+	return func(c *runConfig) {
+		c.runTag = tag
 	}
 }
 
@@ -373,7 +391,7 @@ func (s *Session) Run(ctx context.Context, inputs map[string]*Value, opts ...Run
 // createRunOptions creates OrtRunOptions with context cancellation and LoRA adapter support.
 // Returns the run options pointer and a cleanup function that must be called.
 func (s *Session) createRunOptions(ctx context.Context, config *runConfig) (api.OrtRunOptions, func(), error) {
-	needsRunOpts := (ctx != nil && ctx.Done() != nil) || len(config.loraAdapters) > 0
+	needsRunOpts := (ctx != nil && ctx.Done() != nil) || len(config.loraAdapters) > 0 || config.runTag != ""
 
 	if !needsRunOpts {
 		return 0, func() {}, nil
@@ -394,6 +412,16 @@ func (s *Session) createRunOptions(ctx context.Context, config *runConfig) (api.
 		if err := s.runtime.statusError(status); err != nil {
 			s.runtime.apiFuncs.ReleaseRunOptions(runOpts)
 			return 0, nil, fmt.Errorf("failed to add LoRA adapter to run options: %w", err)
+		}
+	}
+
+	// Set run tag
+	if config.runTag != "" {
+		tagBytes := append([]byte(config.runTag), 0)
+		status := s.runtime.apiFuncs.RunOptionsSetRunTag(runOpts, &tagBytes[0])
+		if err := s.runtime.statusError(status); err != nil {
+			s.runtime.apiFuncs.ReleaseRunOptions(runOpts)
+			return 0, nil, fmt.Errorf("failed to set run tag: %w", err)
 		}
 	}
 
@@ -553,6 +581,25 @@ func (r *Runtime) configureSessionOptions(optsPtr api.OrtSessionOptions, options
 		status := r.apiFuncs.SetSessionLogSeverityLevel(optsPtr, int32(*options.LogSeverityLevel))
 		if err := r.statusError(status); err != nil {
 			return fmt.Errorf("failed to set log severity level: %w", err)
+		}
+	}
+
+	for name, size := range options.FreeDimensionOverrides {
+		nameBytes := append([]byte(name), 0)
+		status := r.apiFuncs.AddFreeDimensionOverrideByName(optsPtr, &nameBytes[0], size)
+		if err := r.statusError(status); err != nil {
+			return fmt.Errorf("failed to add free dimension override %q: %w", name, err)
+		}
+	}
+
+	if options.DeterministicCompute != nil {
+		val := int32(0)
+		if *options.DeterministicCompute {
+			val = 1
+		}
+		status := r.apiFuncs.SetDeterministicCompute(optsPtr, val)
+		if err := r.statusError(status); err != nil {
+			return fmt.Errorf("failed to set deterministic compute: %w", err)
 		}
 	}
 

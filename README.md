@@ -39,6 +39,12 @@ This library provides a pure Go interface to ONNX Runtime without requiring cgo,
 | LoRA adapter hot-swap | Yes | No |
 | Optimized model caching | Yes | No |
 | Zero-copy tensor access | Yes | No |
+| Symbolic dimension introspection | Yes | No |
+| Dynamic dimension overrides | Yes | Yes |
+| Deterministic compute mode | Yes | No |
+| Run tagging (log correlation) | Yes | No |
+| IO binding synchronization | Yes | No |
+| Race-tested concurrent pool | Yes | No |
 
 ## Supported Versions
 

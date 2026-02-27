@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        ort-version: ["1.23.0"]
+        ort-version: ["1.23.0", "1.24.2"]
     env:
       ONNXRUNTIME_VERSION: ${{ matrix.ort-version }}
       ONNXRUNTIME_GENAI_VERSION: "0.11.0"
@@ -64,8 +64,8 @@ jobs:
         cp libs/genai/${{ env.ONNXRUNTIME_GENAI_VERSION }}/lib/libonnxruntime-genai.so lib/
         rm -rf libs/genai/${{ env.ONNXRUNTIME_GENAI_VERSION }}
 
-    - name: Test with coverage
-      run: go test -v -coverprofile=coverage.out ./...
+    - name: Test with coverage and race detection
+      run: go test -race -v -coverprofile=coverage.out ./...
       env:
         LD_LIBRARY_PATH: ${{ github.workspace }}/lib
 

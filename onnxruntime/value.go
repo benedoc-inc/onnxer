@@ -81,6 +81,18 @@ func (v *Value) GetValueType() (ONNXType, error) {
 	return valueType, nil
 }
 
+// HasValue returns true if the value is populated (non-empty).
+// This is useful for handling optional outputs from models that may or may not
+// produce certain outputs depending on the input.
+func (v *Value) HasValue() (bool, error) {
+	var result int32
+	status := v.runtime.apiFuncs.HasValue(v.ptr, &result)
+	if err := v.runtime.statusError(status); err != nil {
+		return false, fmt.Errorf("failed to check if value exists: %w", err)
+	}
+	return result != 0, nil
+}
+
 // GetTensorShape returns the shape (dimensions) of the tensor as a slice of int64 values.
 // For example, a 2x3 matrix returns [2, 3].
 func (v *Value) GetTensorShape() ([]int64, error) {

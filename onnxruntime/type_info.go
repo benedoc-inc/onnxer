@@ -3,13 +3,15 @@ package onnxruntime
 import (
 	"fmt"
 
+	"github.com/benedoc-inc/onnxer/internal/cstrings"
 	"github.com/benedoc-inc/onnxer/onnxruntime/internal/api"
 )
 
 // TensorTypeInfo describes the element type and shape of a tensor.
 type TensorTypeInfo struct {
-	ElementType ONNXTensorElementDataType
-	Shape       []int64
+	ElementType      ONNXTensorElementDataType
+	Shape            []int64
+	SymbolicDimNames []string // symbolic dimension names (e.g., "batch_size", "sequence_length"); empty string for fixed dims
 }
 
 // InputInfo describes a model input's name, type, and tensor info.
@@ -133,9 +135,25 @@ func (s *Session) getTypeInfo(isInput bool, index int) (*rawTypeInfo, error) {
 			}
 		}
 
+		// Get symbolic dimension names
+		symbolicNames := make([]string, dimCount)
+		if dimCount > 0 {
+			symPtrs := make([]*byte, dimCount)
+			status = s.runtime.apiFuncs.GetSymbolicDimensions(tensorInfoPtr, &symPtrs[0], dimCount)
+			if err := s.runtime.statusError(status); err == nil {
+				for j := uintptr(0); j < dimCount; j++ {
+					if symPtrs[j] != nil {
+						symbolicNames[j] = cstrings.CStringToString(symPtrs[j])
+					}
+				}
+			}
+			// Non-fatal: if GetSymbolicDimensions fails, we still have the numeric dims
+		}
+
 		result.tensorInfo = &TensorTypeInfo{
-			ElementType: elemType,
-			Shape:       dims,
+			ElementType:      elemType,
+			Shape:            dims,
+			SymbolicDimNames: symbolicNames,
 		}
 	}
 

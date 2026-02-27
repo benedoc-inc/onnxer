@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -26,6 +27,11 @@ type SessionPool struct {
 	runtime  *Runtime
 	closed   atomic.Bool
 	hooks    []Hook
+	inflight sync.WaitGroup // tracks in-flight Run calls
+
+	// cached from first session (all sessions share the same model)
+	inputNames  []string
+	outputNames []string
 
 	// metrics
 	totalRuns    atomic.Int64
@@ -72,6 +78,10 @@ func NewSessionPool(runtime *Runtime, env *Env, modelData []byte, n int, config 
 			pool.Close()
 			return nil, fmt.Errorf("failed to create session %d: %w", i, err)
 		}
+		if i == 0 {
+			pool.inputNames = session.InputNames()
+			pool.outputNames = session.OutputNames()
+		}
 		pool.sessions <- session
 	}
 
@@ -103,6 +113,10 @@ func NewSessionPoolFromFile(runtime *Runtime, env *Env, modelPath string, n int,
 			pool.Close()
 			return nil, fmt.Errorf("failed to create session %d: %w", i, err)
 		}
+		if i == 0 {
+			pool.inputNames = session.InputNames()
+			pool.outputNames = session.OutputNames()
+		}
 		pool.sessions <- session
 	}
 
@@ -117,6 +131,15 @@ func (p *SessionPool) Run(ctx context.Context, inputs map[string]*Value, opts ..
 		return nil, fmt.Errorf("session pool is closed")
 	}
 
+	// Fast path: short-circuit if context is already cancelled
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	// Track in-flight run so Close() waits for us
+	p.inflight.Add(1)
+	defer p.inflight.Done()
+
 	// Borrow a session
 	var session *Session
 	select {
@@ -129,6 +152,8 @@ func (p *SessionPool) Run(ctx context.Context, inputs map[string]*Value, opts ..
 	defer func() {
 		if !p.closed.Load() {
 			p.sessions <- session
+		} else {
+			session.Close()
 		}
 	}()
 
@@ -258,11 +283,14 @@ func (p *SessionPool) ResetStats() {
 	p.totalLatency.Store(0)
 }
 
-// Close drains the pool and closes all sessions.
+// Close waits for in-flight runs to complete, then drains the pool and closes all sessions.
 func (p *SessionPool) Close() {
 	if !p.closed.CompareAndSwap(false, true) {
 		return
 	}
+
+	// Wait for in-flight runs to finish and return their sessions
+	p.inflight.Wait()
 
 	// Drain and close all sessions
 	close(p.sessions)
@@ -271,31 +299,16 @@ func (p *SessionPool) Close() {
 	}
 }
 
-// InputNames returns the model's input names (from the first session).
-// Returns nil if the pool is closed.
+// InputNames returns the model's input names.
+// This is safe to call concurrently — names are cached at pool creation time.
 func (p *SessionPool) InputNames() []string {
-	if p.closed.Load() {
-		return nil
-	}
-
-	// Peek at a session without removing it
-	session := <-p.sessions
-	names := session.InputNames()
-	p.sessions <- session
-	return names
+	return p.inputNames
 }
 
-// OutputNames returns the model's output names (from the first session).
-// Returns nil if the pool is closed.
+// OutputNames returns the model's output names.
+// This is safe to call concurrently — names are cached at pool creation time.
 func (p *SessionPool) OutputNames() []string {
-	if p.closed.Load() {
-		return nil
-	}
-
-	session := <-p.sessions
-	names := session.OutputNames()
-	p.sessions <- session
-	return names
+	return p.outputNames
 }
 
 // bytesReader implements io.Reader over a byte slice.

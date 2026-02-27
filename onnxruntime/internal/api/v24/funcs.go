@@ -45,6 +45,8 @@ type Funcs struct {
 	disableMemPattern                     func(api.OrtSessionOptions) api.OrtStatus
 	setSessionLogSeverityLevel            func(api.OrtSessionOptions, int32) api.OrtStatus
 	addSessionConfigEntry                 func(api.OrtSessionOptions, *byte, *byte) api.OrtStatus
+	addFreeDimensionOverrideByName        func(api.OrtSessionOptions, *byte, int64) api.OrtStatus
+	setDeterministicCompute               func(api.OrtSessionOptions, int32) api.OrtStatus
 	enableProfiling                       func(api.OrtSessionOptions, *byte) api.OrtStatus
 	disableProfiling                      func(api.OrtSessionOptions) api.OrtStatus
 	sessionOptionsAppendExecutionProvider func(api.OrtSessionOptions, *byte, **byte, **byte, uintptr) api.OrtStatus
@@ -55,6 +57,7 @@ type Funcs struct {
 	releaseRunOptions              func(api.OrtRunOptions)
 	runOptionsSetTerminate         func(api.OrtRunOptions) api.OrtStatus
 	runOptionsUnsetTerminate       func(api.OrtRunOptions) api.OrtStatus
+	runOptionsSetRunTag            func(api.OrtRunOptions, *byte) api.OrtStatus
 	addRunConfigEntry              func(api.OrtRunOptions, *byte, *byte) api.OrtStatus
 	runOptionsAddActiveLoraAdapter func(api.OrtRunOptions, api.OrtLoraAdapter) api.OrtStatus
 
@@ -96,6 +99,7 @@ type Funcs struct {
 	sessionGetOutputTypeInfo func(api.OrtSession, uintptr, *api.OrtTypeInfo) api.OrtStatus
 	castTypeInfoToTensorInfo func(api.OrtTypeInfo, *api.OrtTensorTypeAndShapeInfo) api.OrtStatus
 	getOnnxTypeFromTypeInfo  func(api.OrtTypeInfo, *api.ONNXType) api.OrtStatus
+	getSymbolicDimensions    func(api.OrtTensorTypeAndShapeInfo, **byte, uintptr) api.OrtStatus
 	releaseTypeInfo          func(api.OrtTypeInfo)
 
 	// Tensor/Value operations
@@ -103,6 +107,7 @@ type Funcs struct {
 	createTensorWithDataAsOrtValue func(api.OrtMemoryInfo, unsafe.Pointer, uintptr, *int64, uintptr, api.ONNXTensorElementDataType, *api.OrtValue) api.OrtStatus
 	isTensor                       func(api.OrtValue, *int32) api.OrtStatus
 	getValueType                   func(api.OrtValue, *api.ONNXType) api.OrtStatus
+	hasValue                       func(api.OrtValue, *int32) api.OrtStatus
 	getTensorMutableData           func(api.OrtValue, *unsafe.Pointer) api.OrtStatus
 	getTensorTypeAndShape          func(api.OrtValue, *api.OrtTensorTypeAndShapeInfo) api.OrtStatus
 	getTensorElementType           func(api.OrtTensorTypeAndShapeInfo, *api.ONNXTensorElementDataType) api.OrtStatus
@@ -131,16 +136,18 @@ type Funcs struct {
 	releaseSequenceTypeInfo        func(api.OrtSequenceTypeInfo)
 
 	// IO Binding
-	createIoBinding      func(api.OrtSession, *api.OrtIoBinding) api.OrtStatus
-	releaseIoBinding     func(api.OrtIoBinding)
-	bindInput            func(api.OrtIoBinding, *byte, api.OrtValue) api.OrtStatus
-	bindOutput           func(api.OrtIoBinding, *byte, api.OrtValue) api.OrtStatus
-	bindOutputToDevice   func(api.OrtIoBinding, *byte, api.OrtMemoryInfo) api.OrtStatus
-	getBoundOutputNames  func(api.OrtIoBinding, api.OrtAllocator, **byte, *uintptr, *uintptr) api.OrtStatus
-	getBoundOutputValues func(api.OrtIoBinding, api.OrtAllocator, **api.OrtValue, *uintptr) api.OrtStatus
-	clearBoundInputs     func(api.OrtIoBinding)
-	clearBoundOutputs    func(api.OrtIoBinding)
-	runWithBinding       func(api.OrtSession, api.OrtRunOptions, api.OrtIoBinding) api.OrtStatus
+	createIoBinding         func(api.OrtSession, *api.OrtIoBinding) api.OrtStatus
+	releaseIoBinding        func(api.OrtIoBinding)
+	bindInput               func(api.OrtIoBinding, *byte, api.OrtValue) api.OrtStatus
+	bindOutput              func(api.OrtIoBinding, *byte, api.OrtValue) api.OrtStatus
+	bindOutputToDevice      func(api.OrtIoBinding, *byte, api.OrtMemoryInfo) api.OrtStatus
+	getBoundOutputNames     func(api.OrtIoBinding, api.OrtAllocator, **byte, *uintptr, *uintptr) api.OrtStatus
+	getBoundOutputValues    func(api.OrtIoBinding, api.OrtAllocator, **api.OrtValue, *uintptr) api.OrtStatus
+	clearBoundInputs        func(api.OrtIoBinding)
+	clearBoundOutputs       func(api.OrtIoBinding)
+	runWithBinding          func(api.OrtSession, api.OrtRunOptions, api.OrtIoBinding) api.OrtStatus
+	synchronizeBoundInputs  func(api.OrtIoBinding) api.OrtStatus
+	synchronizeBoundOutputs func(api.OrtIoBinding) api.OrtStatus
 
 	// Execution provider information
 	getAvailableProviders     func(***byte, *int32) api.OrtStatus
@@ -201,6 +208,8 @@ func InitializeFuncs(libraryHandle uintptr) (*Funcs, error) {
 	purego.RegisterFunc(&funcs.disableMemPattern, api.DisableMemPattern)
 	purego.RegisterFunc(&funcs.setSessionLogSeverityLevel, api.SetSessionLogSeverityLevel)
 	purego.RegisterFunc(&funcs.addSessionConfigEntry, api.AddSessionConfigEntry)
+	purego.RegisterFunc(&funcs.addFreeDimensionOverrideByName, api.AddFreeDimensionOverrideByName)
+	purego.RegisterFunc(&funcs.setDeterministicCompute, api.SetDeterministicCompute)
 	purego.RegisterFunc(&funcs.enableProfiling, api.EnableProfiling)
 	purego.RegisterFunc(&funcs.disableProfiling, api.DisableProfiling)
 	purego.RegisterFunc(&funcs.sessionOptionsAppendExecutionProvider, api.SessionOptionsAppendExecutionProvider)
@@ -210,6 +219,7 @@ func InitializeFuncs(libraryHandle uintptr) (*Funcs, error) {
 	purego.RegisterFunc(&funcs.releaseRunOptions, api.ReleaseRunOptions)
 	purego.RegisterFunc(&funcs.runOptionsSetTerminate, api.RunOptionsSetTerminate)
 	purego.RegisterFunc(&funcs.runOptionsUnsetTerminate, api.RunOptionsUnsetTerminate)
+	purego.RegisterFunc(&funcs.runOptionsSetRunTag, api.RunOptionsSetRunTag)
 	purego.RegisterFunc(&funcs.addRunConfigEntry, api.AddRunConfigEntry)
 	purego.RegisterFunc(&funcs.runOptionsAddActiveLoraAdapter, api.RunOptionsAddActiveLoraAdapter)
 
@@ -245,12 +255,14 @@ func InitializeFuncs(libraryHandle uintptr) (*Funcs, error) {
 	purego.RegisterFunc(&funcs.sessionGetOutputTypeInfo, api.SessionGetOutputTypeInfo)
 	purego.RegisterFunc(&funcs.castTypeInfoToTensorInfo, api.CastTypeInfoToTensorInfo)
 	purego.RegisterFunc(&funcs.getOnnxTypeFromTypeInfo, api.GetOnnxTypeFromTypeInfo)
+	purego.RegisterFunc(&funcs.getSymbolicDimensions, api.GetSymbolicDimensions)
 	purego.RegisterFunc(&funcs.releaseTypeInfo, api.ReleaseTypeInfo)
 
 	purego.RegisterFunc(&funcs.createTensorAsOrtValue, api.CreateTensorAsOrtValue)
 	purego.RegisterFunc(&funcs.createTensorWithDataAsOrtValue, api.CreateTensorWithDataAsOrtValue)
 	purego.RegisterFunc(&funcs.isTensor, api.IsTensor)
 	purego.RegisterFunc(&funcs.getValueType, api.GetValueType)
+	purego.RegisterFunc(&funcs.hasValue, api.HasValue)
 	purego.RegisterFunc(&funcs.getTensorMutableData, api.GetTensorMutableData)
 	purego.RegisterFunc(&funcs.getTensorTypeAndShape, api.GetTensorTypeAndShape)
 	purego.RegisterFunc(&funcs.getTensorElementType, api.GetTensorElementType)
@@ -286,6 +298,8 @@ func InitializeFuncs(libraryHandle uintptr) (*Funcs, error) {
 	purego.RegisterFunc(&funcs.clearBoundInputs, api.ClearBoundInputs)
 	purego.RegisterFunc(&funcs.clearBoundOutputs, api.ClearBoundOutputs)
 	purego.RegisterFunc(&funcs.runWithBinding, api.RunWithBinding)
+	purego.RegisterFunc(&funcs.synchronizeBoundInputs, api.SynchronizeBoundInputs)
+	purego.RegisterFunc(&funcs.synchronizeBoundOutputs, api.SynchronizeBoundOutputs)
 
 	purego.RegisterFunc(&funcs.getAvailableProviders, api.GetAvailableProviders)
 	purego.RegisterFunc(&funcs.releaseAvailableProviders, api.ReleaseAvailableProviders)
@@ -401,6 +415,14 @@ func (f *Funcs) AddSessionConfigEntry(options api.OrtSessionOptions, key *byte, 
 	return f.addSessionConfigEntry(options, key, value)
 }
 
+func (f *Funcs) AddFreeDimensionOverrideByName(options api.OrtSessionOptions, dimName *byte, dimValue int64) api.OrtStatus {
+	return f.addFreeDimensionOverrideByName(options, dimName, dimValue)
+}
+
+func (f *Funcs) SetDeterministicCompute(options api.OrtSessionOptions, value int32) api.OrtStatus {
+	return f.setDeterministicCompute(options, value)
+}
+
 func (f *Funcs) EnableProfiling(options api.OrtSessionOptions, path *byte) api.OrtStatus {
 	return f.enableProfiling(options, path)
 }
@@ -433,6 +455,10 @@ func (f *Funcs) RunOptionsSetTerminate(options api.OrtRunOptions) api.OrtStatus 
 
 func (f *Funcs) RunOptionsUnsetTerminate(options api.OrtRunOptions) api.OrtStatus {
 	return f.runOptionsUnsetTerminate(options)
+}
+
+func (f *Funcs) RunOptionsSetRunTag(options api.OrtRunOptions, tag *byte) api.OrtStatus {
+	return f.runOptionsSetRunTag(options, tag)
 }
 
 func (f *Funcs) AddRunConfigEntry(options api.OrtRunOptions, key *byte, value *byte) api.OrtStatus {
@@ -563,6 +589,10 @@ func (f *Funcs) GetOnnxTypeFromTypeInfo(typeInfo api.OrtTypeInfo, onnxType *api.
 	return f.getOnnxTypeFromTypeInfo(typeInfo, onnxType)
 }
 
+func (f *Funcs) GetSymbolicDimensions(typeAndShape api.OrtTensorTypeAndShapeInfo, dimParams **byte, dimParamsLen uintptr) api.OrtStatus {
+	return f.getSymbolicDimensions(typeAndShape, dimParams, dimParamsLen)
+}
+
 func (f *Funcs) ReleaseTypeInfo(typeInfo api.OrtTypeInfo) {
 	f.releaseTypeInfo(typeInfo)
 }
@@ -583,6 +613,10 @@ func (f *Funcs) IsTensor(value api.OrtValue, out *int32) api.OrtStatus {
 
 func (f *Funcs) GetValueType(value api.OrtValue, valueType *api.ONNXType) api.OrtStatus {
 	return f.getValueType(value, valueType)
+}
+
+func (f *Funcs) HasValue(value api.OrtValue, out *int32) api.OrtStatus {
+	return f.hasValue(value, out)
 }
 
 func (f *Funcs) GetTensorMutableData(value api.OrtValue, data *unsafe.Pointer) api.OrtStatus {
@@ -717,6 +751,14 @@ func (f *Funcs) ClearBoundOutputs(binding api.OrtIoBinding) {
 
 func (f *Funcs) RunWithBinding(session api.OrtSession, runOptions api.OrtRunOptions, binding api.OrtIoBinding) api.OrtStatus {
 	return f.runWithBinding(session, runOptions, binding)
+}
+
+func (f *Funcs) SynchronizeBoundInputs(binding api.OrtIoBinding) api.OrtStatus {
+	return f.synchronizeBoundInputs(binding)
+}
+
+func (f *Funcs) SynchronizeBoundOutputs(binding api.OrtIoBinding) api.OrtStatus {
+	return f.synchronizeBoundOutputs(binding)
 }
 
 // Execution provider information methods

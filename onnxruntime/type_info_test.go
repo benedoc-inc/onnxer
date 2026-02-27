@@ -114,6 +114,27 @@ func TestGetInputOutputInfoConsistency(t *testing.T) {
 	}
 }
 
+func TestSymbolicDimensions(t *testing.T) {
+	runtime := newTestRuntime(t)
+	session := newTestSession(t, runtime)
+
+	infos, err := session.GetInputInfo()
+	if err != nil {
+		t.Fatalf("Failed to get input info: %v", err)
+	}
+
+	info := infos[0]
+	if info.TensorInfo == nil {
+		t.Fatal("TensorInfo should not be nil")
+	}
+
+	// SymbolicDimNames should be populated (same length as Shape)
+	if len(info.TensorInfo.SymbolicDimNames) != len(info.TensorInfo.Shape) {
+		t.Errorf("SymbolicDimNames length %d != Shape length %d",
+			len(info.TensorInfo.SymbolicDimNames), len(info.TensorInfo.Shape))
+	}
+}
+
 func TestGetInputInfoClosedSession(t *testing.T) {
 	runtime := newTestRuntime(t)
 	session := newTestSession(t, runtime)
