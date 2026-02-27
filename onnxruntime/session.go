@@ -11,6 +11,17 @@ import (
 	"github.com/benedoc-inc/onnxer/onnxruntime/internal/api"
 )
 
+// ExecutionProvider specifies an execution provider and its configuration options.
+type ExecutionProvider struct {
+	// Name is the execution provider name (e.g., "CPUExecutionProvider", "CUDAExecutionProvider").
+	Name string
+
+	// Options is an optional map of key-value configuration options for this provider.
+	// For example, CUDA provider accepts "device_id", "gpu_mem_limit", etc.
+	// If nil, the provider is configured with default settings.
+	Options map[string]string
+}
+
 // SessionOptions configures options for creating an inference session.
 type SessionOptions struct {
 	// IntraOpNumThreads sets the number of threads used for parallelizing
@@ -18,9 +29,8 @@ type SessionOptions struct {
 	IntraOpNumThreads int
 
 	// ExecutionProviders specifies the execution providers to use, in order of preference.
-	// Common values include "CPUExecutionProvider", "CUDAExecutionProvider", etc.
 	// If empty, the default provider(s) will be used.
-	ExecutionProviders []string
+	ExecutionProviders []ExecutionProvider
 }
 
 // Session represents an ONNX Runtime inference session that can execute
@@ -385,18 +395,34 @@ func (r *Runtime) configureExecutionProviders(optsPtr api.OrtSessionOptions, opt
 	}
 
 	for _, provider := range options.ExecutionProviders {
-		providerNameBytes := append([]byte(provider), 0)
+		providerNameBytes := append([]byte(provider.Name), 0)
 
-		// Call with no options (empty keys/values)
+		var keyPtrs **byte
+		var valuePtrs **byte
+		numOpts := uintptr(len(provider.Options))
+
+		if numOpts > 0 {
+			keys := make([]*byte, 0, numOpts)
+			values := make([]*byte, 0, numOpts)
+			for k, v := range provider.Options {
+				kBytes := append([]byte(k), 0)
+				vBytes := append([]byte(v), 0)
+				keys = append(keys, &kBytes[0])
+				values = append(values, &vBytes[0])
+			}
+			keyPtrs = &keys[0]
+			valuePtrs = &values[0]
+		}
+
 		status := r.apiFuncs.SessionOptionsAppendExecutionProvider(
 			optsPtr,
 			&providerNameBytes[0],
-			nil, // no option keys
-			nil, // no option values
-			0,   // no options
+			keyPtrs,
+			valuePtrs,
+			numOpts,
 		)
 		if err := r.statusError(status); err != nil {
-			return fmt.Errorf("failed to append execution provider %q: %w", provider, err)
+			return fmt.Errorf("failed to append execution provider %q: %w", provider.Name, err)
 		}
 	}
 

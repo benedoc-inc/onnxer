@@ -10,10 +10,11 @@ import (
 	"github.com/benedoc-inc/onnxer/internal/cstrings"
 	"github.com/benedoc-inc/onnxer/onnxruntime/internal/api"
 	v23 "github.com/benedoc-inc/onnxer/onnxruntime/internal/api/v23"
+	v24 "github.com/benedoc-inc/onnxer/onnxruntime/internal/api/v24"
 )
 
 // supportedAPIVersions lists all API versions supported by this library.
-var supportedAPIVersions = []uint32{23}
+var supportedAPIVersions = []uint32{23, 24}
 
 // getDefaultLibraryName returns the default library name based on the current platform.
 func getDefaultLibraryName() string {
@@ -107,6 +108,8 @@ func (r *Runtime) initializeAPI() error {
 	switch r.apiVersion {
 	case 23:
 		return r.initializeV23API()
+	case 24:
+		return r.initializeV24API()
 	default:
 		return fmt.Errorf("unsupported API version: %d", r.apiVersion)
 	}
@@ -115,6 +118,16 @@ func (r *Runtime) initializeAPI() error {
 // initializeV23API initializes the v23 API function pointers.
 func (r *Runtime) initializeV23API() error {
 	apiFuncs, err := v23.InitializeFuncs(r.libraryHandle)
+	if err != nil {
+		return err
+	}
+	r.apiFuncs = apiFuncs
+	return nil
+}
+
+// initializeV24API initializes the v24 API function pointers.
+func (r *Runtime) initializeV24API() error {
+	apiFuncs, err := v24.InitializeFuncs(r.libraryHandle)
 	if err != nil {
 		return err
 	}

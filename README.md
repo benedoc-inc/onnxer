@@ -11,7 +11,7 @@ Forked from [shota3506/onnxruntime-purego](https://github.com/shota3506/onnxrunt
 
 | Library | Supported Version |
 |---------|-------------------|
-| ONNX Runtime | 1.23.x |
+| ONNX Runtime | 1.23.x, 1.24.x |
 | ONNX Runtime GenAI | 0.11.x |
 
 ## ONNX Runtime GenAI Support
